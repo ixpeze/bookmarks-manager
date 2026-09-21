@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Aura Command Center — New Tab",
+  "version": "1.0.0",
+  "description": "Minimalist, high-performance browser new tab start page & bookmark command center",
+  "action": {
+    "default_title": "Aura Command Center"
+  },
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "permissions": ["storage"],
+  "offline_enabled": true
+}

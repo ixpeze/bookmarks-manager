@@ -1,0 +1,18 @@
+# Node & Dependencies
+node_modules/
+package-lock.json
+
+# Operating System
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Scratch and test files
+scratch/
+test_*.js
+*.tmp
+*.log
+
+# Sensitive credentials
+*.env
+*.pat
