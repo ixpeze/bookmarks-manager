@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Deck",
+  "version": "1.0.0",
+  "description": "Minimalist, modular command center and browser new tab start page",
+  "action": {
+    "default_title": "Deck"
+  },
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "permissions": ["storage"],
+  "offline_enabled": true
+}

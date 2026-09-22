@@ -1,0 +1,131 @@
+/* Deck — Design Tokens */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap');
+
+:root {
+  /* Typography */
+  --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-clock: 'JetBrains Mono', monospace;
+  --font-dot: 'Silkscreen', 'JetBrains Mono', monospace;
+
+  /* Nothing Tech Red Signature Accent */
+  --nothing-red: #d71920;
+  --nothing-red-glow: rgba(215, 25, 32, 0.35);
+
+  /* Functional Accents (Monochrome-weighted with tactical highlights) */
+  --cyan-primary: #38bdf8;
+  --amber-primary: #f59e0b;
+  --emerald-primary: #10b981;
+  --rose-primary: #d71920;
+  --accent-active: #d71920;
+
+  /* Geometry: Precision Industrial Curves */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-pill: 9999px;
+
+  /* Transitions */
+  --transition-fast: 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-normal: 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-smooth: 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ==========================================================================
+   DARK THEME: Pure Obsidian / Carbon Hardware (Nothing Tech Dark)
+   100% Desaturated Monochrome, Zero Blue Tint
+   ========================================================================== */
+[data-theme="dark"], :root:not([data-theme="light"]) {
+  --bg-deep: #000000;
+  --bg-canvas: #080808;
+  --bg-surface: #111111;
+  --bg-card: #121212;
+  --bg-card-elevated: #1a1a1a;
+  --bg-recessed: #0a0a0a;
+  --bg-glass: rgba(17, 17, 17, 0.94);
+
+  /* Hairline Technical Borders */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.14);
+  --border-light: rgba(255, 255, 255, 0.22);
+  --border-accent: #d71920;
+
+  /* Typography Colors */
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  --text-muted: #777777;
+  --text-dim: #444444;
+
+  /* INVERTED NEUMORPHIC SHADOWS: Recessed / Debossed Card Wells */
+  --shadow-recessed-sm: inset 1px 1px 3px rgba(0, 0, 0, 0.80), inset -1px -1px 2px rgba(255, 255, 255, 0.03);
+  --shadow-recessed: inset 2px 2px 7px rgba(0, 0, 0, 0.88), inset -1px -1px 3px rgba(255, 255, 255, 0.04);
+  --shadow-recessed-deep: inset 4px 4px 12px rgba(0, 0, 0, 0.95), inset -2px -2px 5px rgba(255, 255, 255, 0.05);
+
+  /* Legacy alias mapping for smooth transition */
+  --shadow-convex-sm: var(--shadow-recessed-sm);
+  --shadow-convex: var(--shadow-recessed);
+  --shadow-convex-lg: var(--shadow-recessed-deep);
+  --shadow-inset-sm: var(--shadow-recessed-sm);
+  --shadow-inset: var(--shadow-recessed);
+  --shadow-inset-deep: var(--shadow-recessed-deep);
+
+  /* Subtle Rim Highlight & Red LED glow */
+  --shadow-hover-card: 0 0 0 1px rgba(255, 255, 255, 0.16), var(--shadow-recessed);
+  --shadow-hover-red: 0 0 14px var(--nothing-red-glow);
+
+  /* Ambient Lighting: 100% Monochrome */
+  --ambient-gradient-1: rgba(255, 255, 255, 0.02);
+  --ambient-gradient-2: rgba(255, 255, 255, 0.01);
+  --ambient-gradient-3: rgba(0, 0, 0, 0.50);
+}
+
+/* ==========================================================================
+   LIGHT THEME: Architectural Concrete & Matte Silver (Nothing Tech Light)
+   100% Neutral, Zero Blue Tint, Shadows strictly darker than background
+   ========================================================================== */
+[data-theme="light"] {
+  --bg-deep: #cecece;
+  --bg-canvas: #dcdcdc;
+  --bg-surface: #e5e5e5;
+  --bg-card: #e5e5e5;
+  --bg-card-elevated: #eeeeee;
+  --bg-recessed: #d4d4d4;
+  --bg-glass: rgba(229, 229, 229, 0.94);
+
+  /* Hairline Technical Borders */
+  --border-subtle: rgba(0, 0, 0, 0.11);
+  --border-medium: rgba(0, 0, 0, 0.20);
+  --border-light: rgba(0, 0, 0, 0.32);
+  --border-accent: #d71920;
+
+  /* Typography Colors */
+  --text-primary: #111111;
+  --text-secondary: #333333;
+  --text-muted: #666666;
+  --text-dim: #888888;
+
+  /* INVERTED NEUMORPHIC SHADOWS: Strictly Darker Insets on Light Surface */
+  --shadow-recessed-sm: inset 1px 1px 3px rgba(0, 0, 0, 0.12), inset -1px -1px 2px rgba(255, 255, 255, 0.65);
+  --shadow-recessed: inset 2px 2px 7px rgba(0, 0, 0, 0.18), inset -1px -1px 3px rgba(255, 255, 255, 0.75);
+  --shadow-recessed-deep: inset 4px 4px 12px rgba(0, 0, 0, 0.24), inset -2px -2px 5px rgba(255, 255, 255, 0.85);
+
+  /* Legacy alias mapping for smooth transition */
+  --shadow-convex-sm: var(--shadow-recessed-sm);
+  --shadow-convex: var(--shadow-recessed);
+  --shadow-convex-lg: var(--shadow-recessed-deep);
+  --shadow-inset-sm: var(--shadow-recessed-sm);
+  --shadow-inset: var(--shadow-recessed);
+  --shadow-inset-deep: var(--shadow-recessed-deep);
+
+  /* Subtle Rim Highlight & Red LED glow */
+  --shadow-hover-card: 0 0 0 1px rgba(0, 0, 0, 0.22), var(--shadow-recessed);
+  --shadow-hover-red: 0 0 12px rgba(215, 25, 32, 0.20);
+
+  /* Ambient Lighting: 100% Monochrome */
+  --ambient-gradient-1: rgba(255, 255, 255, 0.15);
+  --ambient-gradient-2: rgba(0, 0, 0, 0.02);
+  --ambient-gradient-3: rgba(0, 0, 0, 0.04);
+}

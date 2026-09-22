@@ -1,0 +1,91 @@
+{
+  "version": "1.0.0",
+  "apps": {
+    "unreal": {
+      "name": "Unreal Engine 5",
+      "tag": "UE5",
+      "color": "#0E1128",
+      "border": "#2c5282",
+      "icon": "box",
+      "path": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
+      "args": []
+    },
+    "3dsmax": {
+      "name": "3ds Max",
+      "tag": "MAX",
+      "color": "#112233",
+      "border": "#2b6cb0",
+      "icon": "layers",
+      "path": "C:\\Program Files\\Autodesk\\3ds Max 2026\\3dsmax.exe",
+      "args": []
+    },
+    "photoshop": {
+      "name": "Photoshop",
+      "tag": "PSD",
+      "color": "#001e36",
+      "border": "#3182ce",
+      "icon": "image",
+      "path": "C:\\Program Files\\Adobe\\Adobe Photoshop 2025\\Photoshop.exe",
+      "args": []
+    },
+    "blender": {
+      "name": "Blender",
+      "tag": "BLEND",
+      "color": "#2c1c0a",
+      "border": "#dd6b20",
+      "icon": "cube",
+      "path": "C:\\Program Files\\Blender Foundation\\Blender 4.5\\blender.exe",
+      "args": []
+    },
+    "pureref": {
+      "name": "PureRef",
+      "tag": "REF",
+      "color": "#1a202c",
+      "border": "#718096",
+      "icon": "layout",
+      "path": "C:\\Program Files\\PureRef\\PureRef.exe",
+      "args": []
+    },
+    "vscode": {
+      "name": "VS Code",
+      "tag": "CODE",
+      "color": "#0d1b2a",
+      "border": "#007acc",
+      "icon": "code",
+      "path": "C:\\Users\\eudgi\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+      "args": []
+    }
+  },
+  "quick_folders": [
+    {
+      "id": "ai_projects",
+      "name": "AI Projects",
+      "path": "D:\\AI",
+      "icon": "cpu"
+    },
+    {
+      "id": "downloads",
+      "name": "Downloads",
+      "path": "C:\\Users\\eudgi\\Downloads",
+      "icon": "download"
+    },
+    {
+      "id": "assets",
+      "name": "Assets",
+      "path": "D:\\AI",
+      "icon": "folder"
+    },
+    {
+      "id": "gdrive",
+      "name": "Google Drive",
+      "path": "G:\\",
+      "icon": "cloud"
+    },
+    {
+      "id": "comfy_output",
+      "name": "ComfyUI Outputs",
+      "path": "E:\\_AI\\ComfyUI\\Instances\\C_UI\\CUI\\ComfyUI\\output",
+      "icon": "film"
+    }
+  ]
+}
