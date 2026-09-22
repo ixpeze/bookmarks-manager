@@ -7,6 +7,11 @@ package-lock.json
 Thumbs.db
 desktop.ini
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Scratch and test files
 scratch/
 test_*.js

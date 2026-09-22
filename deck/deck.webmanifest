@@ -1,0 +1,16 @@
+{
+  "name": "Deck",
+  "short_name": "Deck",
+  "description": "Minimalist, modular command center and daily workflow dashboard",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#080808",
+  "theme_color": "#080808",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23111111' stroke='%23d71920' stroke-width='4'/><circle cx='50' cy='50' r='18' fill='%23d71920'/></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
