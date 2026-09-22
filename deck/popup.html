@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Save to Deck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-deep: #090a0f;
+      --bg-surface: #10121a;
+      --bg-card: #151824;
+      --bg-recessed: #0c0e14;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-medium: rgba(255, 255, 255, 0.14);
+      --text-primary: #ededed;
+      --text-muted: #787f95;
+      --cyan-primary: #00f0ff;
+      --amber-primary: #f59e0b;
+      --emerald-primary: #10b981;
+      --nothing-red: #d71920;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 360px;
+      padding: 16px;
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, sans-serif;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .popup-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 0.3px;
+    }
+
+    .brand-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--nothing-red);
+      box-shadow: 0 0 8px rgba(215, 25, 32, 0.5);
+    }
+
+    .open-dashboard-btn {
+      color: var(--cyan-primary);
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+
+    .open-dashboard-btn:hover {
+      text-decoration: underline;
+    }
+
+    .page-preview {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 14px;
+    }
+
+    .page-favicon {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .page-meta {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .page-domain {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .form-group {
+      margin-bottom: 10px;
+    }
+
+    label {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      background: var(--bg-recessed);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 7px 10px;
+      color: var(--text-primary);
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--cyan-primary);
+    }
+
+    .star-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      margin-bottom: 14px;
+      cursor: pointer;
+    }
+
+    .star-btn {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .star-btn.active {
+      color: var(--amber-primary);
+    }
+
+    .star-btn svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .submit-btn {
+      width: 100%;
+      background: var(--cyan-primary);
+      color: #07090e;
+      border: none;
+      border-radius: 5px;
+      padding: 9px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: filter 0.15s ease, transform 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .submit-btn:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .status-msg {
+      margin-top: 10px;
+      font-size: 11px;
+      text-align: center;
+      min-height: 16px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="popup-header">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span>Save to Deck</span>
+    </div>
+    <a href="index.html" target="_blank" class="open-dashboard-btn" id="btn-open-deck">
+      <span>Open Deck</span>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+        <polyline points="15 3 21 3 21 9"></polyline>
+        <line x1="10" y1="14" x2="21" y2="3"></line>
+      </svg>
+    </a>
+  </div>
+
+  <div class="page-preview">
+    <img src="" id="tab-favicon" class="page-favicon" alt="" />
+    <div class="page-meta">
+      <div class="page-domain" id="tab-domain">Loading...</div>
+    </div>
+  </div>
+
+  <form id="save-form">
+    <div class="form-group">
+      <label for="bm-title">Title</label>
+      <input type="text" id="bm-title" required />
+    </div>
+
+    <div class="form-group">
+      <label for="bm-url">URL</label>
+      <input type="url" id="bm-url" required readonly style="color: var(--text-muted); font-family: monospace; font-size: 11px;" />
+    </div>
+
+    <div class="form-group">
+      <label for="bm-category">Collection</label>
+      <input type="text" id="bm-category" value="Custom Bookmarks" placeholder="3D Tools, Reference, Dev, etc." />
+    </div>
+
+    <div class="form-group">
+      <label for="bm-tags">Tags (Comma-separated)</label>
+      <input type="text" id="bm-tags" placeholder="art, tutorial, inspiration" />
+    </div>
+
+    <div class="star-row" id="toggle-star-row">
+      <span style="font-size: 12px; font-weight: 500;">Add to Favorites</span>
+      <button type="button" class="star-btn" id="star-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="star-svg">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        </svg>
+      </button>
+    </div>
+
+    <button type="submit" class="submit-btn" id="btn-submit">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path>
+      </svg>
+      <span>Save Bookmark</span>
+    </button>
+  </form>
+
+  <div class="status-msg" id="status-msg"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

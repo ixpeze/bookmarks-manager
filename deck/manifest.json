@@ -4,11 +4,30 @@
   "version": "1.0.0",
   "description": "Minimalist, modular command center and browser new tab start page",
   "action": {
-    "default_title": "Deck"
+    "default_title": "Save to Deck",
+    "default_popup": "popup.html"
   },
   "chrome_url_overrides": {
     "newtab": "index.html"
   },
-  "permissions": ["storage"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "<all_urls>"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
   "offline_enabled": true
 }

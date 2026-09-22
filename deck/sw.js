@@ -3,7 +3,7 @@
  * Deck — Offline Caching Service Worker
  */
 
-const CACHE_NAME = 'deck-cache-v1';
+const CACHE_NAME = 'deck-cache-v3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -22,8 +22,8 @@ const ASSETS_TO_CACHE = [
   './js/services/weather.js',
   './js/services/omnibar.js',
   './js/modules/command-center.js',
+  './js/modules/bookmarks-manager.js',
   './js/modules/studio-3d.js',
-  './js/modules/library-explorer.js',
   './js/modules/utilities.js'
 ];
 
@@ -51,8 +51,16 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  // Pass-through for external weather or favicon APIs
-  if (e.request.url.includes('open-meteo.com') || e.request.url.includes('google.com/s2/favicons')) {
+  // Pass-through for external URLs (live website previews, weather, favicons, bridge daemon)
+  try {
+    if (new URL(e.request.url).origin !== self.location.origin) {
+      return;
+    }
+  } catch {
+    return;
+  }
+
+  if (e.request.url.includes(':8080') || e.request.url.includes('/api/')) {
     return;
   }
 

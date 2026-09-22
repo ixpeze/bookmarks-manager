@@ -22,9 +22,9 @@
 </head>
 <body>
   <div class="app-wrapper">
-    <!-- Top Navigation Bar -->
+    <!-- Top Navigation Bar (Centered Island) -->
     <header class="top-nav-bar">
-      <!-- 5 Dedicated Top Navigation Tabs -->
+      <!-- 4 Dedicated Top Navigation Tabs -->
       <nav class="nav-tabs" aria-label="Main Navigation">
         <button class="tab-btn active" data-tab="tab-command-center">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -33,7 +33,14 @@
             <rect width="7" height="9" x="14" y="12" rx="1"></rect>
             <rect width="7" height="5" x="3" y="16" rx="1"></rect>
           </svg>
-          Command Center
+          Home
+        </button>
+
+        <button class="tab-btn" data-tab="tab-bookmarks">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path>
+          </svg>
+          Bookmarks
         </button>
 
         <button class="tab-btn" data-tab="tab-studio-3d">
@@ -45,13 +52,6 @@
           Studio 3D Hub
         </button>
 
-        <button class="tab-btn" data-tab="tab-library-explorer">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
-          </svg>
-          Master Library
-        </button>
-
         <button class="tab-btn" data-tab="tab-utilities">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
@@ -60,7 +60,7 @@
         </button>
       </nav>
 
-      <!-- Nav Action Controls -->
+      <!-- Nav Action Controls (Pinned Right) -->
       <div class="nav-actions">
         <!-- Theme Toggle (Dark Carbon / Light Alabaster) -->
         <button class="nav-icon-btn" id="btn-toggle-theme" title="Toggle Light / Dark Theme">
@@ -86,8 +86,8 @@
     <!-- Tab View Panels -->
     <main class="tab-content-area">
       <div class="tab-pane active" id="tab-command-center"></div>
+      <div class="tab-pane" id="tab-bookmarks"></div>
       <div class="tab-pane" id="tab-studio-3d"></div>
-      <div class="tab-pane" id="tab-library-explorer"></div>
       <div class="tab-pane" id="tab-utilities"></div>
     </main>
   </div>

@@ -17,21 +17,6 @@ import { fetchDhakaWeather } from '../services/weather.js';
 import { Omnibar } from '../services/omnibar.js';
 
 export function renderCommandCenter(container) {
-  const pinnedEssentials = [
-    { name: 'Gmail', href: 'https://mail.google.com/mail/u/0/#inbox', host: 'mail.google.com' },
-    { name: 'Google Drive', href: 'https://drive.google.com/drive/u/0/my-drive', host: 'drive.google.com' },
-    { name: 'YouTube', href: 'https://www.youtube.com/', host: 'youtube.com' },
-    { name: 'ChatGPT', href: 'https://chatgpt.com/', host: 'chatgpt.com' },
-    { name: 'Claude', href: 'https://claude.ai/', host: 'claude.ai' },
-    { name: 'Perplexity', href: 'https://www.perplexity.ai/', host: 'perplexity.ai' },
-    { name: 'GitHub', href: 'https://github.com/', host: 'github.com' },
-    { name: 'Reddit', href: 'https://www.reddit.com/', host: 'reddit.com' },
-    { name: 'AssetVault', href: 'https://assetvault-eaj.pages.dev/', host: 'pages.dev' },
-    { name: 'DPDC Meter', href: 'https://dpdc-balance-tracker-b2099.web.app/', host: 'web.app' },
-    { name: 'FMHY', href: 'https://fmhy.net/', host: 'fmhy.net' },
-    { name: 'Google Maps', href: 'https://www.google.com/maps', host: 'google.com' }
-  ];
-
   container.innerHTML = `
     <!-- Top Cockpit Header: Clock, Weather & Real-Time Hardware Telemetry -->
     <header class="hero-header cockpit-hero-header">
@@ -129,10 +114,9 @@ export function renderCommandCenter(container) {
     <!-- Universal Omnibar Search Slot -->
     <div class="omnibar-container" id="omnibar-slot"></div>
 
-    <!-- Desktop Apps Launch Deck & Quick Folders Jump List -->
-    <section class="desktop-launch-section">
-      <!-- 1. Desktop Apps Launch Deck -->
-      <div class="bento-card launch-deck-card">
+    <!-- Full-Width Horizontal Launch Deck & Quick Folders Jump List -->
+    <section class="launch-deck-section" style="margin-bottom: 20px;">
+      <div class="bento-card launch-deck-card" style="width: 100%;">
         <div class="card-header">
           <div class="card-title-group">
             <span class="card-icon-pill" style="color: var(--cyan-primary);">
@@ -141,7 +125,7 @@ export function renderCommandCenter(container) {
                 <path d="m9 8 6 4-6 4Z"></path>
               </svg>
             </span>
-            <span class="card-title">Desktop Apps Launch Deck</span>
+            <span class="card-title">Launch Deck</span>
           </div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <button class="icon-tiny-btn" id="btn-configure-apps" title="Configure Executable Paths">
@@ -154,34 +138,24 @@ export function renderCommandCenter(container) {
           </div>
         </div>
 
+        <!-- 1 Horizontal Deck for Apps -->
         <div class="launch-deck-grid" id="apps-launch-grid">
           <!-- Populated dynamically from bridge config -->
         </div>
-      </div>
 
-      <!-- 2. Quick Folders Jump List -->
-      <div class="bento-card quick-folders-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <span class="card-icon-pill" style="color: var(--amber-primary);">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
-              </svg>
-            </span>
-            <span class="card-title">Quick Folders Jump List</span>
+        <!-- Compact Quick Folders Jump Strip Below Launch Deck -->
+        <div class="quick-folders-strip" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <span style="font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Jump:</span>
+          <div id="quick-folders-grid" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <!-- Populated dynamically from bridge config -->
           </div>
-          <span class="card-badge">Explorer Jump</span>
-        </div>
-
-        <div class="quick-folders-list" id="quick-folders-grid">
-          <!-- Populated dynamically from bridge config -->
         </div>
       </div>
     </section>
 
-    <!-- Hot Projects Shelf (Drag-and-Drop + Native Picker) -->
-    <section class="hot-projects-section">
-      <div class="bento-card hot-projects-card">
+    <!-- Shelf (Hot Projects Shelf with HTML5 Drag & Drop + Native Picker) -->
+    <section class="shelf-section" style="margin-bottom: 24px;">
+      <div class="bento-card shelf-card" style="width: 100%;">
         <div class="card-header">
           <div class="card-title-group">
             <span class="card-icon-pill" style="color: var(--emerald-primary);">
@@ -189,7 +163,7 @@ export function renderCommandCenter(container) {
                 <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"></path>
               </svg>
             </span>
-            <span class="card-title">Hot Projects Shelf</span>
+            <span class="card-title">Shelf</span>
           </div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <button class="btn-secondary" id="btn-add-hot-project" style="font-size: 11px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 5px;">
@@ -206,7 +180,7 @@ export function renderCommandCenter(container) {
         <!-- HTML5 Drag & Drop Zone -->
         <div class="hot-projects-dropzone" id="hot-projects-dropzone">
           <div class="dropzone-inner">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="dropzone-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="dropzone-icon">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -221,106 +195,6 @@ export function renderCommandCenter(container) {
         </div>
       </div>
     </section>
-
-    <!-- Daily Essentials & Quick Scratchpad Grid -->
-    <section class="command-hero-grid">
-      <!-- Pinned Daily Essentials (Span 8) -->
-      <div class="hero-essentials-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <span class="card-icon-pill" style="color: var(--nothing-red);">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-              </svg>
-            </span>
-            <span class="card-title">Pinned Daily Essentials</span>
-          </div>
-          <span class="card-badge">Direct Access</span>
-        </div>
-
-        <div class="essentials-grid">
-          ${pinnedEssentials.map(item => `
-            <a href="${item.href}" target="_blank" rel="noopener noreferrer" class="essential-pill" title="${item.name}">
-              <img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(item.host)}&sz=128" class="essential-icon" alt="" loading="lazy" />
-              <span class="essential-name">${item.name}</span>
-            </a>
-          `).join('')}
-        </div>
-      </div>
-
-      <!-- Quick Scratchpad Card (Span 4) -->
-      <div class="bento-card scratchpad-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <span class="card-icon-pill" style="color: var(--amber-primary);">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <polyline points="10 9 9 9 8 9"></polyline>
-              </svg>
-            </span>
-            <span class="card-title">Quick Scratchpad</span>
-          </div>
-          <span class="card-badge" id="scratchpad-wordcount">0 words</span>
-        </div>
-        <textarea 
-          class="scratchpad-textarea" 
-          id="scratchpad-input" 
-          placeholder="Jot down temporary thoughts, commands, links, or prompt ideas... (Auto-saved)"
-        >${store.state.scratchpad || ''}</textarea>
-        <div class="scratchpad-footer">
-          <span id="scratchpad-status" style="color: var(--emerald-primary);">Saved locally</span>
-          <div class="scratchpad-actions">
-            <button class="btn-secondary" id="btn-copy-scratchpad">Copy</button>
-            <button class="btn-secondary" id="btn-clear-scratchpad">Clear</button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Bento Categories Grid -->
-    <main class="command-categories-grid">
-      ${store.state.toolbarZones.map(zone => `
-        <div class="category-zone-card" data-zone="${zone.id}">
-          <div class="card-header">
-            <div class="card-title-group">
-              <span class="card-icon-pill" style="color: var(--${zone.color}-primary);">
-                ${getZoneSVG(zone.icon)}
-              </span>
-              <span class="card-title" style="font-size: 13px;">${zone.title}</span>
-            </div>
-            <span class="card-badge">${zone.items.length}</span>
-          </div>
-
-          <div class="category-links-list">
-            ${zone.items.map(item => {
-              let highRes = item.icon;
-              try {
-                if (item.href.startsWith('http://') || item.href.startsWith('https://')) {
-                  const host = new URL(item.href).hostname;
-                  highRes = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`;
-                }
-              } catch {}
-
-              return `
-                <a href="${item.href}" target="_blank" rel="noopener noreferrer" class="category-link-row" title="${item.name}&#10;${item.href}">
-                  <div class="category-link-left">
-                    <img src="${highRes}" class="category-link-icon" alt="" onerror="this.onerror=null; this.src='${item.icon || ''}';" loading="lazy" />
-                    <span class="category-link-name">${item.name}</span>
-                  </div>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="category-link-arrow">
-                    <line x1="7" y1="17" x2="17" y2="7"></line>
-                    <polyline points="7 7 17 7 17 17"></polyline>
-                  </svg>
-                </a>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `).join('')}
-    </main>
 
     <!-- App Configuration Modal -->
     <div class="modal-overlay" id="bridge-config-modal">
@@ -380,11 +254,8 @@ export function renderCommandCenter(container) {
   // 5. Initialize Desktop Apps & Quick Folders
   initDesktopAppsAndFolders(container);
 
-  // 6. Initialize Hot Projects Shelf
+  // 6. Initialize Shelf (Hot Projects)
   initHotProjectsShelf(container);
-
-  // 7. Initialize Scratchpad
-  initScratchpad(container);
 }
 
 /**

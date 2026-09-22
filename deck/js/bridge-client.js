@@ -4,7 +4,75 @@
  * Communicates with localhost:8080 bridge daemon.
  * Manages adaptive telemetry polling, app execution, Everything 1.5 search,
  * and project drag-and-drop path resolution.
+ * Includes offline resilience and local caching to prevent extension console error badges.
  */
+
+const DEFAULT_DECK_CONFIG = {
+  version: "1.0.0",
+  apps: {
+    unreal: {
+      name: "Unreal Engine 5",
+      tag: "UE5",
+      color: "#0E1128",
+      border: "#2c5282",
+      icon: "box",
+      path: "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
+      args: ""
+    },
+    "3dsmax": {
+      name: "3ds Max",
+      tag: "MAX",
+      color: "#112233",
+      border: "#2b6cb0",
+      icon: "layers",
+      path: "C:\\Program Files\\Autodesk\\3ds Max 2026\\3dsmax.exe",
+      args: ""
+    },
+    photoshop: {
+      name: "Photoshop",
+      tag: "PSD",
+      color: "#001e36",
+      border: "#3182ce",
+      icon: "image",
+      path: "C:\\Program Files\\Adobe\\Adobe Photoshop 2025\\Photoshop.exe",
+      args: ""
+    },
+    blender: {
+      name: "Blender",
+      tag: "BLEND",
+      color: "#2c1c0a",
+      border: "#dd6b20",
+      icon: "cube",
+      path: "C:\\Program Files\\Blender Foundation\\Blender 4.5\\blender.exe",
+      args: ""
+    },
+    pureref: {
+      name: "PureRef",
+      tag: "REF",
+      color: "#1a202c",
+      border: "#718096",
+      icon: "layout",
+      path: "C:\\Program Files\\PureRef\\PureRef.exe",
+      args: ""
+    },
+    vscode: {
+      name: "VS Code",
+      tag: "CODE",
+      color: "#0d1b2a",
+      border: "#007acc",
+      icon: "code",
+      path: "C:\\Users\\eudgi\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+      args: ""
+    }
+  },
+  quick_folders: [
+    { id: "ai_projects", name: "AI Projects", path: "D:\\AI", icon: "cpu" },
+    { id: "downloads", name: "Downloads", path: "C:\\Users\\eudgi\\Downloads", icon: "download" },
+    { id: "assets", name: "Assets", path: "D:\\AI", icon: "folder" },
+    { id: "gdrive", name: "Google Drive", path: "G:\\", icon: "cloud" },
+    { id: "comfy_output", name: "ComfyUI Outputs", path: "E:\\_AI\\ComfyUI\\Instances\\C_UI\\CUI\\ComfyUI\\output", icon: "film" }
+  ]
+};
 
 class DeckBridgeClient {
   constructor(baseUrl = 'http://localhost:8080') {
@@ -15,9 +83,24 @@ class DeckBridgeClient {
     this.pollInterval = 2500;
     this.statusCheckInterval = 5000;
     this.lastStats = null;
-    this.config = null;
+    this.config = this._loadCachedConfig();
 
     this._init();
+  }
+
+  _loadCachedConfig() {
+    try {
+      const raw = localStorage.getItem('deck_bridge_config_cache');
+      if (raw) return JSON.parse(raw);
+    } catch (_) {}
+    return DEFAULT_DECK_CONFIG;
+  }
+
+  _saveCachedConfig(cfg) {
+    if (!cfg) return;
+    try {
+      localStorage.setItem('deck_bridge_config_cache', JSON.stringify(cfg));
+    } catch (_) {}
   }
 
   async _init() {
@@ -69,7 +152,7 @@ class DeckBridgeClient {
         return true;
       }
     } catch (e) {
-      // Bridge is offline
+      // Bridge is offline — expected when companion script is not running
     }
 
     if (this.isConnected) {
@@ -118,20 +201,27 @@ class DeckBridgeClient {
   }
 
   async fetchConfig() {
+    if (!this.isConnected) {
+      return this.config || this._loadCachedConfig();
+    }
     try {
       const res = await fetch(`${this.baseUrl}/api/config`, { cache: 'no-store' });
       if (res.ok) {
         this.config = await res.json();
+        this._saveCachedConfig(this.config);
         window.dispatchEvent(new CustomEvent('deck:bridge-config', { detail: this.config }));
         return this.config;
       }
     } catch (e) {
-      console.warn('[BridgeClient] Failed to fetch config:', e);
+      // Bridge connection interrupted or offline; graceful fallback without console.warn error badges
+      this.isConnected = false;
     }
-    return null;
+    return this.config || this._loadCachedConfig();
   }
 
   async saveConfig(cfg) {
+    this._saveCachedConfig(cfg);
+    if (!this.isConnected) return false;
     try {
       const res = await fetch(`${this.baseUrl}/api/config`, {
         method: 'POST',
@@ -141,10 +231,11 @@ class DeckBridgeClient {
       if (res.ok) {
         const data = await res.json();
         this.config = data.config;
+        this._saveCachedConfig(this.config);
         return true;
       }
     } catch (e) {
-      console.error('[BridgeClient] Failed to save config:', e);
+      // Graceful offline failure
     }
     return false;
   }
@@ -162,7 +253,7 @@ class DeckBridgeClient {
         return data.results || [];
       }
     } catch (e) {
-      console.error('[BridgeClient] Everything search failed:', e);
+      // Bridge disconnected or query interrupted
     }
     return [];
   }
@@ -182,12 +273,14 @@ class DeckBridgeClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      const data = await res.json();
-      return data.success;
+      if (res.ok) {
+        const data = await res.json();
+        return data.success;
+      }
     } catch (e) {
-      console.error('[BridgeClient] Launch error:', e);
-      return false;
+      // Graceful failure
     }
+    return false;
   }
 
   /**
@@ -243,7 +336,7 @@ class DeckBridgeClient {
         return data.success ? data.path : null;
       }
     } catch (e) {
-      console.error('[BridgeClient] File picker error:', e);
+      // Graceful failure
     }
     return null;
   }
@@ -264,7 +357,7 @@ class DeckBridgeClient {
         return data.success ? data.path : null;
       }
     } catch (e) {
-      console.error('[BridgeClient] Resolve file error:', e);
+      // Graceful failure
     }
     return null;
   }

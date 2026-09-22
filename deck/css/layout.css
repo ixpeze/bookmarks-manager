@@ -38,21 +38,26 @@ body {
   padding: 14px 24px 40px;
 }
 
-/* Top Navigation Bar */
+/* Top Navigation Bar (Centered Island) */
 .top-nav-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  position: sticky;
+  top: 12px;
+  z-index: 100;
   padding: 8px 16px;
   background: var(--bg-surface);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-recessed);
   margin-bottom: 20px;
-  position: sticky;
-  top: 12px;
-  z-index: 100;
   backdrop-filter: blur(12px);
+}
+
+.top-nav-bar .nav-actions {
+  position: absolute;
+  right: 16px;
 }
 
 /* Nav Tabs */
@@ -194,8 +199,12 @@ body {
     padding: 12px 14px 28px;
   }
   .top-nav-bar {
+    justify-content: space-between;
     flex-wrap: wrap;
     gap: 12px;
+  }
+  .top-nav-bar .nav-actions {
+    position: static;
   }
   .nav-tabs {
     order: 3;

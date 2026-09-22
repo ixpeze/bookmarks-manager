@@ -11,6 +11,9 @@ export const STORAGE_KEYS = {
   SEARCH_ENGINE: 'deck_search_engine',
   SCRATCHPAD: 'deck_scratchpad_notes',
   CUSTOM_PROMPTS: 'deck_custom_prompts',
+  CUSTOM_BOOKMARKS: 'deck_custom_bookmarks',
+  STARRED_BOOKMARKS: 'deck_starred_bookmarks',
+  BOOKMARKS_VIEW_MODE: 'deck_bookmarks_view_mode',
   CLOUD_CONFIG: 'deck_cloud_config',
   DPDC_BALANCE: 'deck_dpdc_balance',
   DPDC_BURN_RATE: 'deck_dpdc_burn_rate',
@@ -29,6 +32,9 @@ class Store {
       searchEngine: localStorage.getItem(STORAGE_KEYS.SEARCH_ENGINE) || 'google',
       scratchpad: localStorage.getItem(STORAGE_KEYS.SCRATCHPAD) || '',
       customPrompts: this.loadJSON(STORAGE_KEYS.CUSTOM_PROMPTS, []),
+      customBookmarks: this.loadJSON(STORAGE_KEYS.CUSTOM_BOOKMARKS, []),
+      starredBookmarks: new Set(this.loadJSON(STORAGE_KEYS.STARRED_BOOKMARKS, [])),
+      bookmarksViewMode: localStorage.getItem(STORAGE_KEYS.BOOKMARKS_VIEW_MODE) || 'cards',
       cloudConfig: this.loadJSON(STORAGE_KEYS.CLOUD_CONFIG, { url: '', key: '', autoSync: false }),
       dpdcBalance: parseFloat(localStorage.getItem(STORAGE_KEYS.DPDC_BALANCE)) || 2500,
       dpdcBurnRate: parseFloat(localStorage.getItem(STORAGE_KEYS.DPDC_BURN_RATE)) || 95,
@@ -118,6 +124,42 @@ class Store {
     localStorage.setItem(STORAGE_KEYS.DPDC_FIXED, fixedCharges.toString());
     localStorage.setItem(STORAGE_KEYS.DPDC_DATE, date);
     this.emit('dpdc:updated', { balance, burnRate, fixedCharges, date });
+  }
+
+  addCustomBookmark(bookmark) {
+    if (!bookmark.id) bookmark.id = 'bm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    if (!bookmark.createdAt) bookmark.createdAt = new Date().toISOString();
+    this.state.customBookmarks.unshift(bookmark);
+    this.saveJSON(STORAGE_KEYS.CUSTOM_BOOKMARKS, this.state.customBookmarks);
+    this.emit('bookmarks:updated', this.state.customBookmarks);
+    return bookmark;
+  }
+
+  deleteCustomBookmark(id) {
+    this.state.customBookmarks = this.state.customBookmarks.filter(b => b.id !== id);
+    this.saveJSON(STORAGE_KEYS.CUSTOM_BOOKMARKS, this.state.customBookmarks);
+    this.emit('bookmarks:updated', this.state.customBookmarks);
+  }
+
+  toggleStarred(url) {
+    if (this.state.starredBookmarks.has(url)) {
+      this.state.starredBookmarks.delete(url);
+    } else {
+      this.state.starredBookmarks.add(url);
+    }
+    this.saveJSON(STORAGE_KEYS.STARRED_BOOKMARKS, Array.from(this.state.starredBookmarks));
+    this.emit('bookmarks:starred-changed', { url, starred: this.state.starredBookmarks.has(url) });
+    return this.state.starredBookmarks.has(url);
+  }
+
+  isStarred(url) {
+    return this.state.starredBookmarks.has(url);
+  }
+
+  setBookmarksViewMode(mode) {
+    this.state.bookmarksViewMode = mode;
+    localStorage.setItem(STORAGE_KEYS.BOOKMARKS_VIEW_MODE, mode);
+    this.emit('bookmarks:view-mode-changed', mode);
   }
 
   setTheme(theme) {

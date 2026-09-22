@@ -11,8 +11,8 @@ import { bus } from './core/events.js';
 
 // Import Feature Modules
 import commandCenterModule from './modules/command-center.js';
+import bookmarksManagerModule from './modules/bookmarks-manager.js';
 import studio3DModule from './modules/studio-3d.js';
-import libraryExplorerModule from './modules/library-explorer.js';
 import utilitiesModule from './modules/utilities.js';
 
 class DeckApp {
@@ -25,8 +25,8 @@ class DeckApp {
   async init() {
     // 1. Register Feature Modules
     registry.register(commandCenterModule);
+    registry.register(bookmarksManagerModule);
     registry.register(studio3DModule);
-    registry.register(libraryExplorerModule);
     registry.register(utilitiesModule);
 
     // 2. Bind UI Controls & Hotkeys
@@ -37,7 +37,10 @@ class DeckApp {
     this.registerServiceWorker();
 
     // 3. Mount Initial Tab
-    const initialTab = store.state.activeTab || 'tab-command-center';
+    let initialTab = store.state.activeTab || 'tab-command-center';
+    if (initialTab === 'tab-library-explorer') {
+      initialTab = 'tab-bookmarks';
+    }
     await this.switchTab(initialTab);
   }
 
@@ -251,8 +254,8 @@ class DeckApp {
       if (!['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) && !e.ctrlKey && !e.altKey && !e.metaKey) {
         const tabMap = {
           '1': 'tab-command-center',
-          '2': 'tab-studio-3d',
-          '3': 'tab-library-explorer',
+          '2': 'tab-bookmarks',
+          '3': 'tab-studio-3d',
           '4': 'tab-utilities'
         };
         if (tabMap[e.key]) {

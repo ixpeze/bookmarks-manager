@@ -135,6 +135,9 @@ export class GoogleDriveSync {
       dateISO: new Date().toISOString(),
       scratchpad: store.state.scratchpad,
       customPrompts: store.state.customPrompts,
+      customBookmarks: store.state.customBookmarks,
+      starredBookmarks: Array.from(store.state.starredBookmarks),
+      bookmarksViewMode: store.state.bookmarksViewMode,
       dpdcBalance: store.state.dpdcBalance,
       dpdcBurnRate: store.state.dpdcBurnRate,
       activeTab: store.state.activeTab,
@@ -199,6 +202,16 @@ export class GoogleDriveSync {
     if (data.scratchpad !== undefined) store.saveScratchpad(data.scratchpad);
     if (data.customPrompts && Array.isArray(data.customPrompts)) {
       data.customPrompts.forEach(p => store.addCustomPrompt(p));
+    }
+    if (data.customBookmarks && Array.isArray(data.customBookmarks)) {
+      store.state.customBookmarks = data.customBookmarks;
+      store.saveJSON(STORAGE_KEYS.CUSTOM_BOOKMARKS, data.customBookmarks);
+      store.emit('bookmarks:updated', data.customBookmarks);
+    }
+    if (data.starredBookmarks && Array.isArray(data.starredBookmarks)) {
+      store.state.starredBookmarks = new Set(data.starredBookmarks);
+      store.saveJSON(STORAGE_KEYS.STARRED_BOOKMARKS, data.starredBookmarks);
+      store.emit('bookmarks:starred-changed', {});
     }
     if (data.dpdcBalance !== undefined) {
       store.saveDPDCMetrics(data.dpdcBalance, data.dpdcBurnRate || 95);
