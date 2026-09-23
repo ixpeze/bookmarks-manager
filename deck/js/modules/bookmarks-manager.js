@@ -879,6 +879,7 @@ export function renderBookmarksManager(container) {
         // Normal click: open inspector
         lastClickedIndex = idx;
         openInspector(bm);
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       });
     });
 
@@ -987,6 +988,15 @@ export function renderBookmarksManager(container) {
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="12" y1="16" x2="12" y2="12"></line>
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+            </button>
+
+            <button class="bm-browser-btn" id="btn-toggle-theater" title="Maximize / Theater Mode (Full Viewport)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-theater-btn">
+                <path d="M15 3h6v6"></path>
+                <path d="M9 21H3v-6"></path>
+                <path d="M21 3l-7 7"></path>
+                <path d="M3 21l7-7"></path>
               </svg>
             </button>
 
@@ -1099,9 +1109,21 @@ export function renderBookmarksManager(container) {
     const starBtn = inspectorBody.querySelector('#btn-toggle-inspector-star');
     const toggleMetaBtn = inspectorBody.querySelector('#btn-toggle-meta-details');
     const closeBtn = inspectorBody.querySelector('#btn-close-inspector-panel');
+    const theaterBtn = inspectorBody.querySelector('#btn-toggle-theater');
     const metaPanel = inspectorBody.querySelector('#bm-meta-panel');
     const deleteBtn = inspectorBody.querySelector('#btn-delete-inspector-bm');
     const tagEditorInput = inspectorBody.querySelector('#bm-inspector-new-tag');
+
+    if (theaterBtn) {
+      // Restore theater icon state if drawer is already in theater mode
+      const isTheaterActive = inspectorDrawer.classList.contains('theater-mode');
+      updateTheaterIcon(theaterBtn, isTheaterActive);
+
+      theaterBtn.addEventListener('click', () => {
+        const isNowTheater = inspectorDrawer.classList.toggle('theater-mode');
+        updateTheaterIcon(theaterBtn, isNowTheater);
+      });
+    }
 
     if (iframe && loader) {
       iframe.addEventListener('load', () => {
@@ -1145,6 +1167,7 @@ export function renderBookmarksManager(container) {
       closeBtn.addEventListener('click', () => {
         userClosedInspector = true;
         selectedBookmark = null;
+        inspectorDrawer.classList.remove('theater-mode');
         inspectorDrawer.classList.remove('open');
         streamList.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
       });
@@ -1204,8 +1227,16 @@ export function renderBookmarksManager(container) {
     });
   }
 
-  // Ctrl+A / Cmd+A Keyboard Shortcut for visible bookmarks
+  // Keyboard Shortcuts: Ctrl+A / Cmd+A and Esc for Theater Mode
   container.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (inspectorDrawer && inspectorDrawer.classList.contains('theater-mode')) {
+        inspectorDrawer.classList.remove('theater-mode');
+        const tBtn = inspectorDrawer.querySelector('#btn-toggle-theater');
+        if (tBtn) updateTheaterIcon(tBtn, false);
+      }
+      return;
+    }
     if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
       e.preventDefault();
@@ -1616,6 +1647,31 @@ export function renderBookmarksManager(container) {
 
   // Initial render
   render();
+}
+
+function updateTheaterIcon(btn, isTheater) {
+  if (!btn) return;
+  if (isTheater) {
+    btn.title = 'Exit Theater Mode (Esc)';
+    btn.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 14h6v6"></path>
+        <path d="M20 10h-6V4"></path>
+        <path d="M14 10l7-7"></path>
+        <path d="M10 14L3 21"></path>
+      </svg>
+    `;
+  } else {
+    btn.title = 'Maximize / Theater Mode (Full Viewport)';
+    btn.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M15 3h6v6"></path>
+        <path d="M9 21H3v-6"></path>
+        <path d="M21 3l-7 7"></path>
+        <path d="M3 21l7-7"></path>
+      </svg>
+    `;
+  }
 }
 
 function escapeHTML(str) {
