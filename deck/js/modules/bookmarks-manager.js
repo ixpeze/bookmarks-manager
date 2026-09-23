@@ -4,12 +4,23 @@
  * 
  * Features:
  * 1. 3-Pane Hybrid Layout:
- *    - Left: Collections & Quick Filters (All, Starred, Recent, Tags, Master Categories)
- *    - Center: Rich Bookmark Stream with Cards/List view switcher, live search, sorting, and inline actions
- *    - Right: Slide-out Inspector Drawer with metadata, domain badge, tags, notes, and 1-click copy/open
- * 2. Full interactive suite: Star/favorite, custom bookmark creation, editing, deletion
- * 3. Bidirectional persistence with LocalStorage, chrome.storage.local, and Google Drive sync hooks
- * 4. Strict Zero-Emoji UI: clean SVG icons throughout
+ *    - Left: Collections, Quick Filters (All, Starred, Recent, Broken Links), and First-Class Tags Tree
+ *    - Center: Rich Bookmark Stream with Cards/List switcher, live search, sorting, select-all, and inline checkboxes
+ *    - Right: Slide-out Inspector Drawer with live website preview, metadata, broken link warning, and tag editor
+ * 2. Multi-Select & Floating Action Dock:
+ *    - Checkbox & Shift+Click range selection
+ *    - Floating dock: Star All, Add Tag, Copy URLs, Open All, Delete Selected
+ * 3. First-Class Tag Taxonomy:
+ *    - Dynamic tag extraction and frequency counting in left sidebar
+ *    - Tag editor in inspector (add tag on Enter, delete tag)
+ * 4. Dual-Engine Import & Export:
+ *    - Netscape HTML & JSON export / import with deduplication
+ *    - 1-Click Chrome Native Bookmarks API sync (chrome.bookmarks)
+ * 5. On-Demand Link Health Telemetry:
+ *    - Concurrent batch scanner (chunks of 5, 5s timeout)
+ *    - Dedicated Broken Links filter with badge
+ *    - 1-Click Wayback Machine archive lookup fallback
+ * 6. Strict Zero-Emoji UI: Clean SVG icons throughout
  */
 
 import { BOOKMARK_DATA } from '../data/bookmarks.js';
@@ -17,30 +28,48 @@ import { store } from '../core/store.js';
 
 export function renderBookmarksManager(container) {
   // State
-  let activeFilter = 'all'; // 'all' | 'starred' | 'recent' | 'cat:<idx>' | 'tag:<tag>'
+  let activeFilter = 'all'; // 'all' | 'starred' | 'recent' | 'broken' | 'cat:<idx>' | 'tag:<tag>'
   let searchQuery = '';
   let sortBy = 'title-asc'; // 'title-asc' | 'title-desc' | 'domain' | 'category'
   let viewMode = store.state.bookmarksViewMode || 'cards'; // 'cards' | 'list'
   let selectedBookmark = null; // for live preview inspector
   let userClosedInspector = false;
   let currentFiltered = [];
+  const selectedSet = new Set(); // URLs of selected items for batch operations
+  let lastClickedIndex = -1; // for Shift+Click range selection
+  let isAuditing = false;
 
-  // 1. Compile all library bookmarks + custom user bookmarks
+  // 1. Compile all library bookmarks + custom user bookmarks + overlay metadata
   function getAllBookmarks() {
+    const overlay = store.state.overlayMetadata || {};
     const libraryItems = BOOKMARK_DATA.library.flatMap((cat, idx) => flattenCategory(cat, '', idx));
-    const customItems = (store.state.customBookmarks || []).map(b => ({
-      name: b.title || b.name,
-      href: b.url || b.href,
-      icon: b.favicon || b.icon || '',
-      folder: b.category || 'Custom Bookmarks',
-      tags: b.tags || [],
-      notes: b.notes || '',
-      id: b.id,
-      isCustom: true,
-      createdAt: b.createdAt || new Date().toISOString()
-    }));
+    const customItems = (store.state.customBookmarks || []).map(b => {
+      const url = b.url || b.href;
+      const meta = overlay[url] || {};
+      return {
+        name: meta.title || b.title || b.name,
+        href: url,
+        icon: b.favicon || b.icon || '',
+        folder: b.category || 'Custom Bookmarks',
+        tags: meta.tags || b.tags || [],
+        notes: meta.notes || b.notes || '',
+        id: b.id,
+        isCustom: true,
+        createdAt: b.createdAt || new Date().toISOString()
+      };
+    });
 
-    return [...customItems, ...libraryItems];
+    const libraryMerged = libraryItems.map(it => {
+      const meta = overlay[it.href] || {};
+      return {
+        ...it,
+        name: meta.title || it.name,
+        tags: meta.tags || it.tags || [],
+        notes: meta.notes || it.notes || ''
+      };
+    });
+
+    return [...customItems, ...libraryMerged];
   }
 
   function getCleanTitle(rawTitle) {
@@ -85,10 +114,23 @@ export function renderBookmarksManager(container) {
     if (lower.includes('3ds max') || lower.includes('3dsmax')) tags.push('3dsMax');
     if (lower.includes('shader') || lower.includes('material')) tags.push('Shaders');
     if (lower.includes('texture') || lower.includes('pbr')) tags.push('PBR');
-    if (lower.includes('github')) tags.push('Code');
+    if (lower.includes('github') || lower.includes('code')) tags.push('Code');
     if (lower.includes('ai') || lower.includes('llm') || lower.includes('gpt')) tags.push('AI');
     if (lower.includes('asset') || lower.includes('model')) tags.push('Assets');
     return tags.slice(0, 3);
+  }
+
+  function extractAllTags(bookmarks) {
+    const counts = new Map();
+    bookmarks.forEach(b => {
+      (b.tags || []).forEach(t => {
+        const clean = t.trim();
+        if (clean) {
+          counts.set(clean, (counts.get(clean) || 0) + 1);
+        }
+      });
+    });
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   }
 
   function getDomain(url) {
@@ -123,7 +165,7 @@ export function renderBookmarksManager(container) {
   // Shell Layout
   container.innerHTML = `
     <div class="bm-shell">
-      <!-- Left Sidebar: Collections & Quick Filters -->
+      <!-- Left Sidebar: Collections, Quick Filters & Tags -->
       <aside class="bm-sidebar">
         <!-- Sidebar Header / Add Trigger -->
         <div class="bm-sidebar-header">
@@ -178,6 +220,26 @@ export function renderBookmarksManager(container) {
             </div>
             <span class="bm-count-badge" id="badge-count-recent">0</span>
           </button>
+
+          <button class="bm-filter-btn" data-filter="broken" id="btn-filter-broken">
+            <div class="bm-filter-left">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--rose-primary);">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+              </svg>
+              <span>Broken Links</span>
+            </div>
+            <span class="bm-count-badge" id="badge-count-broken">0</span>
+          </button>
+        </div>
+
+        <!-- Tags Cloud Navigation -->
+        <div class="bm-section-label" style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center;">
+          <span>Tags</span>
+          <span id="bm-tags-total-count" style="font-size: 10px; color: var(--text-muted);">0</span>
+        </div>
+        <div class="bm-category-tree" id="bm-tags-tree" style="max-height: 160px; overflow-y: auto;">
+          <div style="padding: 8px; font-size: 11px; color: var(--text-muted);">Loading tags...</div>
         </div>
 
         <!-- Master Categories -->
@@ -205,9 +267,12 @@ export function renderBookmarksManager(container) {
       <main class="bm-center-feed">
         <!-- Top Toolbar -->
         <div class="bm-feed-toolbar">
-          <div class="bm-toolbar-left">
-            <div class="bm-feed-title" id="bm-feed-title">All Bookmarks</div>
-            <span class="bm-feed-counter" id="bm-feed-counter">Loading...</span>
+          <div class="bm-toolbar-left" style="display: flex; align-items: center; gap: 10px;">
+            <input type="checkbox" id="bm-select-all" class="bm-item-checkbox" title="Select All in current view" />
+            <div>
+              <div class="bm-feed-title" id="bm-feed-title">All Bookmarks</div>
+              <span class="bm-feed-counter" id="bm-feed-counter">Loading...</span>
+            </div>
           </div>
 
           <!-- Live Search Input -->
@@ -220,8 +285,48 @@ export function renderBookmarksManager(container) {
             <button class="bm-search-clear" id="btn-clear-search" style="display: none;">✕</button>
           </div>
 
-          <!-- Controls: Sort & View Switcher -->
+          <!-- Controls: Actions, Sort & View Switcher -->
           <div class="bm-toolbar-right">
+            <!-- Scan Links Button -->
+            <button class="bm-toolbar-btn" id="btn-scan-links" title="Audit links for 404s, timeouts, and broken domains">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+              </svg>
+              <span>Scan Links</span>
+            </button>
+
+            <!-- Import / Export Menu -->
+            <div class="bm-import-export-wrap">
+              <button class="bm-toolbar-btn" id="btn-import-export-toggle" title="Import and Export Bookmarks">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Import / Export</span>
+              </button>
+              <div class="bm-import-export-menu" id="bm-import-export-menu">
+                <button class="bm-menu-item" id="btn-menu-export-html">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span>Export HTML Bookmarks</span>
+                </button>
+                <button class="bm-menu-item" id="btn-menu-export-json">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                  <span>Export JSON Backup</span>
+                </button>
+                <div class="bm-menu-divider"></div>
+                <button class="bm-menu-item" id="btn-menu-import-file">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                  <span>Upload HTML / JSON</span>
+                </button>
+                <button class="bm-menu-item" id="btn-menu-sync-chrome">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--cyan-primary);"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="4"></circle><line x1="21.17" y1="8" x2="12" y2="8"></line><line x1="3.95" y1="6.06" x2="8.54" y2="14"></line><line x1="10.88" y1="21.94" x2="15.46" y2="14"></line></svg>
+                  <span>Sync from Chrome Bar</span>
+                </button>
+              </div>
+              <input type="file" id="bm-file-import-input" accept=".html,.htm,.json" style="display: none;" />
+            </div>
+
             <!-- Sort Selector -->
             <div class="bm-sort-select-wrap">
               <select id="bm-sort-select" class="bm-select-input">
@@ -258,22 +363,45 @@ export function renderBookmarksManager(container) {
 
         <!-- Bookmarks Stream Container -->
         <div class="bm-stream-container ${viewMode === 'cards' ? 'view-cards' : 'view-list'}" id="bm-stream-list">
-          <!-- Populated dynamically -->
+          <div class="bm-loading-state">Loading bookmarks stream...</div>
+        </div>
+
+        <!-- Floating Bottom Action Dock for Batch Operations -->
+        <div class="bm-floating-dock" id="bm-floating-dock">
+          <div class="bm-dock-count-badge">
+            <span id="bm-selected-count">0</span>&nbsp;selected
+          </div>
+          <button class="bm-dock-btn" id="btn-dock-star" title="Star all selected">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            <span>Star All</span>
+          </button>
+          <button class="bm-dock-btn" id="btn-dock-tag" title="Add tag to selected">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"></path><path d="M7 7h.01"></path></svg>
+            <span>Add Tag</span>
+          </button>
+          <button class="bm-dock-btn" id="btn-dock-copy" title="Copy all URLs">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
+            <span>Copy URLs</span>
+          </button>
+          <button class="bm-dock-btn" id="btn-dock-open" title="Open all in new tabs">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            <span>Open All</span>
+          </button>
+          <button class="bm-dock-btn danger" id="btn-dock-delete" title="Delete custom bookmarks in selection">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+            <span>Delete</span>
+          </button>
+          <div class="bm-dock-divider"></div>
+          <button class="bm-dock-btn" id="btn-dock-clear" title="Clear selection">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
         </div>
       </main>
 
-      <!-- Right Live Preview Inspector (3rd Panel) -->
+      <!-- Right 3rd Panel: Live Webpage Preview & Inspector -->
       <aside class="bm-inspector-drawer" id="bm-inspector-drawer">
         <div class="bm-inspector-body" id="bm-inspector-body">
-          <div class="bm-inspector-empty">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--text-muted); margin-bottom: 8px;">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="2" y1="12" x2="22" y2="12"></line>
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-            </svg>
-            <div style="font-weight: 700; color: var(--text-primary); margin-bottom: 4px; font-size: 13px;">Live Webpage Preview</div>
-            <div style="max-width: 240px; margin: 0 auto; line-height: 1.4; color: var(--text-muted);">Select any bookmark from the list to preview the website live in this panel.</div>
-          </div>
+          <div class="bm-inspector-empty">Select a bookmark to inspect details & live webpage preview</div>
         </div>
       </aside>
     </div>
@@ -283,12 +411,13 @@ export function renderBookmarksManager(container) {
       <div class="modal-box" style="max-width: 480px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
           <div class="card-title" style="font-size: 15px; display: flex; align-items: center; gap: 8px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--cyan-primary);">
-              <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--amber-primary);">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
-            Add Bookmark
+            Add Custom Bookmark
           </div>
-          <button id="btn-close-add-modal" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 4px;">
+          <button id="btn-close-add-modal" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer;" title="Close">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -296,35 +425,37 @@ export function renderBookmarksManager(container) {
           </button>
         </div>
 
-        <form id="add-bookmark-form" style="display: flex; flex-direction: column; gap: 12px;">
-          <div>
-            <label style="display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Page Title *</label>
-            <input type="text" class="input-text" id="add-bm-title" placeholder="e.g. PureRef Official Reference Tool" required style="width: 100%;" />
+        <form id="add-bookmark-form">
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div>
+              <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Title</label>
+              <input type="text" id="add-bm-title" class="prompt-input" required placeholder="e.g. Poly Haven HDRIs" />
+            </div>
+
+            <div>
+              <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">URL</label>
+              <input type="url" id="add-bm-url" class="prompt-input" required placeholder="https://polyhaven.com" />
+            </div>
+
+            <div>
+              <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Collection / Category</label>
+              <input type="text" id="add-bm-category" class="prompt-input" placeholder="e.g. 3D & Textures" />
+            </div>
+
+            <div>
+              <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Tags (comma separated)</label>
+              <input type="text" id="add-bm-tags" class="prompt-input" placeholder="e.g. HDRI, PBR, Assets" />
+            </div>
+
+            <div>
+              <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Notes / Scratchpad</label>
+              <textarea id="add-bm-notes" class="prompt-input" style="height: 60px; resize: vertical;" placeholder="Optional personal notes..."></textarea>
+            </div>
           </div>
 
-          <div>
-            <label style="display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">URL Link *</label>
-            <input type="url" class="input-text" id="add-bm-url" placeholder="https://www.pureref.com/" required style="width: 100%;" />
-          </div>
-
-          <div>
-            <label style="display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Collection / Category</label>
-            <input type="text" class="input-text" id="add-bm-category" placeholder="3D Tools, Reference, AI, etc." value="Custom Bookmarks" style="width: 100%;" />
-          </div>
-
-          <div>
-            <label style="display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Tags (Comma-separated)</label>
-            <input type="text" class="input-text" id="add-bm-tags" placeholder="reference, design, software" style="width: 100%;" />
-          </div>
-
-          <div>
-            <label style="display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Notes (Optional)</label>
-            <textarea class="input-text" id="add-bm-notes" placeholder="Quick workflow note or prompt idea..." style="width: 100%; height: 60px; resize: vertical;"></textarea>
-          </div>
-
-          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;">
-            <button type="button" class="btn-secondary" id="btn-cancel-add-modal">Cancel</button>
-            <button type="submit" class="btn-secondary" style="background: var(--cyan-primary); color: #07090e; font-weight: 700; border: none;">Save to Deck</button>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;">
+            <button type="button" class="btn-secondary" id="btn-cancel-add-modal" style="font-size: 12px; padding: 6px 14px;">Cancel</button>
+            <button type="submit" class="btn-secondary" style="font-size: 12px; padding: 6px 16px; background: var(--amber-primary); color: #080808; font-weight: 700; border: none;">Save Bookmark</button>
           </div>
         </form>
       </div>
@@ -332,9 +463,9 @@ export function renderBookmarksManager(container) {
   `;
 
   // Elements
+  const streamList = container.querySelector('#bm-stream-list');
   const feedTitle = container.querySelector('#bm-feed-title');
   const feedCounter = container.querySelector('#bm-feed-counter');
-  const streamList = container.querySelector('#bm-stream-list');
   const searchInput = container.querySelector('#bm-search-input');
   const clearSearchBtn = container.querySelector('#btn-clear-search');
   const sortSelect = container.querySelector('#bm-sort-select');
@@ -344,9 +475,33 @@ export function renderBookmarksManager(container) {
   const countBadgeAll = container.querySelector('#badge-count-all');
   const countBadgeStarred = container.querySelector('#badge-count-starred');
   const countBadgeRecent = container.querySelector('#badge-count-recent');
+  const countBadgeBroken = container.querySelector('#badge-count-broken');
+  const tagsTree = container.querySelector('#bm-tags-tree');
+  const tagsTotalCount = container.querySelector('#bm-tags-total-count');
+
   const inspectorDrawer = container.querySelector('#bm-inspector-drawer');
   const inspectorBody = container.querySelector('#bm-inspector-body');
-  const btnCloseInspector = container.querySelector('#btn-close-inspector');
+
+  // Multi-Select Elements
+  const selectAllBox = container.querySelector('#bm-select-all');
+  const floatingDock = container.querySelector('#bm-floating-dock');
+  const selectedCountEl = container.querySelector('#bm-selected-count');
+  const btnDockStar = container.querySelector('#btn-dock-star');
+  const btnDockTag = container.querySelector('#btn-dock-tag');
+  const btnDockCopy = container.querySelector('#btn-dock-copy');
+  const btnDockOpen = container.querySelector('#btn-dock-open');
+  const btnDockDelete = container.querySelector('#btn-dock-delete');
+  const btnDockClear = container.querySelector('#btn-dock-clear');
+
+  // Toolbar action elements
+  const btnScanLinks = container.querySelector('#btn-scan-links');
+  const btnImportExportToggle = container.querySelector('#btn-import-export-toggle');
+  const importExportMenu = container.querySelector('#bm-import-export-menu');
+  const btnMenuExportHtml = container.querySelector('#btn-menu-export-html');
+  const btnMenuExportJson = container.querySelector('#btn-menu-export-json');
+  const btnMenuImportFile = container.querySelector('#btn-menu-import-file');
+  const btnMenuSyncChrome = container.querySelector('#btn-menu-sync-chrome');
+  const fileImportInput = container.querySelector('#bm-file-import-input');
 
   const addModal = container.querySelector('#add-bookmark-modal');
   const btnOpenAddModal = container.querySelector('#btn-open-add-modal');
@@ -354,16 +509,77 @@ export function renderBookmarksManager(container) {
   const btnCancelAddModal = container.querySelector('#btn-cancel-add-modal');
   const addForm = container.querySelector('#add-bookmark-form');
 
+  // Update Floating Action Dock state
+  function updateDock() {
+    if (!floatingDock) return;
+    const count = selectedSet.size;
+    if (selectedCountEl) selectedCountEl.textContent = count;
+
+    if (count > 0) {
+      floatingDock.classList.add('visible');
+    } else {
+      floatingDock.classList.remove('visible');
+    }
+
+    if (selectAllBox) {
+      selectAllBox.checked = currentFiltered.length > 0 && selectedSet.size === currentFiltered.length;
+      selectAllBox.indeterminate = selectedSet.size > 0 && selectedSet.size < currentFiltered.length;
+    }
+  }
+
+  // Render Tags in Left Sidebar
+  function renderTagsSidebar(all) {
+    if (!tagsTree) return;
+    const tagPairs = extractAllTags(all);
+    if (tagsTotalCount) tagsTotalCount.textContent = tagPairs.length;
+
+    if (tagPairs.length === 0) {
+      tagsTree.innerHTML = `<div style="padding: 8px; font-size: 11px; color: var(--text-muted);">No tags yet</div>`;
+      return;
+    }
+
+    tagsTree.innerHTML = tagPairs.map(([tag, count]) => {
+      const isActive = activeFilter === `tag:${tag}`;
+      return `
+        <button class="bm-tag-sidebar-btn ${isActive ? 'active' : ''}" data-tag="${escapeAttr(tag)}">
+          <span>#${escapeHTML(tag)}</span>
+          <span class="bm-count-badge">${count}</span>
+        </button>
+      `;
+    }).join('');
+
+    tagsTree.querySelectorAll('.bm-tag-sidebar-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        container.querySelectorAll('.bm-filter-btn, .bm-cat-btn').forEach(b => b.classList.remove('active'));
+        tagsTree.querySelectorAll('.bm-tag-sidebar-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeFilter = `tag:${btn.dataset.tag}`;
+        render();
+      });
+    });
+  }
+
   // Filter & Render logic
   function render() {
     const all = getAllBookmarks();
     const starredSet = store.state.starredBookmarks || new Set();
+    const healthCache = store.state.linkHealthCache || {};
+
+    // Count broken links
+    let brokenCount = 0;
+    Object.values(healthCache).forEach(h => {
+      if (h && h.status === 'broken') brokenCount++;
+    });
 
     // Update Badges
     if (countBadgeAll) countBadgeAll.textContent = all.length;
     if (countBadgeStarred) countBadgeStarred.textContent = starredSet.size;
     const recentCount = (store.state.customBookmarks || []).length;
     if (countBadgeRecent) countBadgeRecent.textContent = recentCount;
+    if (countBadgeBroken) countBadgeBroken.textContent = brokenCount;
+
+    // Render tags
+    renderTagsSidebar(all);
 
     // Filter
     let filtered = all;
@@ -384,6 +600,13 @@ export function renderBookmarksManager(container) {
         createdAt: b.createdAt
       }));
       if (feedTitle) feedTitle.textContent = 'Recently Added Bookmarks';
+    } else if (activeFilter === 'broken') {
+      filtered = filtered.filter(b => healthCache[b.href] && healthCache[b.href].status === 'broken');
+      if (feedTitle) feedTitle.textContent = `Broken / Unreachable Links (${filtered.length})`;
+    } else if (activeFilter.startsWith('tag:')) {
+      const targetTag = activeFilter.slice(4).toLowerCase();
+      filtered = filtered.filter(b => (b.tags || []).some(t => t.toLowerCase() === targetTag));
+      if (feedTitle) feedTitle.textContent = `Tagged with #${activeFilter.slice(4)}`;
     } else if (activeFilter.startsWith('cat:')) {
       const idx = parseInt(activeFilter.split(':')[1], 10);
       const cat = BOOKMARK_DATA.library[idx];
@@ -433,6 +656,8 @@ export function renderBookmarksManager(container) {
           <div class="bm-empty-sub">Try changing your search query, selecting another category, or add a new bookmark.</div>
         </div>
       `;
+      currentFiltered = [];
+      updateDock();
       return;
     }
 
@@ -444,14 +669,21 @@ export function renderBookmarksManager(container) {
       const isStarred = starredSet.has(b.href);
       const tags = b.tags || [];
       const isSelected = selectedBookmark && selectedBookmark.href === b.href;
+      const isItemChecked = selectedSet.has(b.href);
+      const health = healthCache[b.href];
 
       if (viewMode === 'cards') {
         return `
-          <div class="bm-card ${isSelected ? 'selected' : ''}" data-index="${idx}">
-            <div class="bm-card-top">
+          <div class="bm-card ${isSelected ? 'selected' : ''} ${isItemChecked ? 'item-selected' : ''}" data-index="${idx}">
+            <div class="bm-item-select-wrap">
+              <input type="checkbox" class="bm-item-checkbox" data-index="${idx}" data-url="${escapeAttr(b.href)}" ${isItemChecked ? 'checked' : ''} />
+            </div>
+
+            <div class="bm-card-top" style="padding-left: ${isItemChecked ? '18px' : '0'};">
               <div class="bm-card-source">
                 <img src="${favicon}" class="bm-card-icon" alt="" loading="lazy" onerror="this.style.display='none';" />
                 <span class="bm-domain-badge">${escapeHTML(domain)}</span>
+                ${health && health.status === 'broken' ? `<span class="bm-health-badge broken">Dead Link</span>` : ''}
               </div>
               <button class="bm-star-btn ${isStarred ? 'active' : ''}" data-url="${escapeAttr(b.href)}" title="${isStarred ? 'Remove from favorites' : 'Add to favorites'}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="${isStarred ? 'var(--amber-primary)' : 'none'}" stroke="currentColor" stroke-width="2">
@@ -465,7 +697,7 @@ export function renderBookmarksManager(container) {
 
             ${tags.length > 0 ? `
               <div class="bm-card-tags">
-                ${tags.map(t => `<span class="bm-tag-pill">${escapeHTML(t)}</span>`).join('')}
+                ${tags.map(t => `<span class="bm-tag-pill" data-tag="${escapeAttr(t)}">#${escapeHTML(t)}</span>`).join('')}
               </div>
             ` : ''}
 
@@ -492,7 +724,11 @@ export function renderBookmarksManager(container) {
       } else {
         // List View
         return `
-          <div class="bm-row ${isSelected ? 'selected' : ''}" data-index="${idx}">
+          <div class="bm-row ${isSelected ? 'selected' : ''} ${isItemChecked ? 'item-selected' : ''}" data-index="${idx}">
+            <div class="bm-item-select-wrap" style="position: static; opacity: 1;">
+              <input type="checkbox" class="bm-item-checkbox" data-index="${idx}" data-url="${escapeAttr(b.href)}" ${isItemChecked ? 'checked' : ''} />
+            </div>
+
             <div class="bm-row-left">
               <button class="bm-star-btn ${isStarred ? 'active' : ''}" data-url="${escapeAttr(b.href)}" title="Star">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="${isStarred ? 'var(--amber-primary)' : 'none'}" stroke="currentColor" stroke-width="2">
@@ -508,7 +744,8 @@ export function renderBookmarksManager(container) {
 
             <div class="bm-row-mid">
               <span class="bm-domain-badge">${escapeHTML(domain)}</span>
-              ${tags.map(t => `<span class="bm-tag-pill">${escapeHTML(t)}</span>`).join('')}
+              ${health && health.status === 'broken' ? `<span class="bm-health-badge broken">Dead Link</span>` : ''}
+              ${tags.map(t => `<span class="bm-tag-pill" data-tag="${escapeAttr(t)}">#${escapeHTML(t)}</span>`).join('')}
             </div>
 
             <div class="bm-row-right">
@@ -536,13 +773,50 @@ export function renderBookmarksManager(container) {
     // Bind item click to open inspector
     streamList.querySelectorAll('.bm-card, .bm-row').forEach(card => {
       card.addEventListener('click', (e) => {
-        if (e.target.closest('.bm-star-btn') || e.target.closest('.bm-card-open-btn') || e.target.closest('.bm-row-open-btn')) {
+        if (e.target.closest('.bm-item-select-wrap') || e.target.closest('.bm-star-btn') || e.target.closest('.bm-card-open-btn') || e.target.closest('.bm-row-open-btn')) {
           return;
+        }
+        if (e.target.closest('.bm-tag-pill')) {
+          const tag = e.target.closest('.bm-tag-pill').dataset.tag;
+          if (tag) {
+            activeFilter = `tag:${tag}`;
+            render();
+            return;
+          }
         }
         const idx = parseInt(card.dataset.index, 10);
         if (currentFiltered[idx]) {
           openInspector(currentFiltered[idx]);
         }
+      });
+    });
+
+    // Bind checkboxes (with Shift+Click range support)
+    streamList.querySelectorAll('.bm-item-checkbox').forEach(cb => {
+      cb.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(cb.dataset.index, 10);
+        const url = cb.dataset.url;
+
+        if (e.shiftKey && lastClickedIndex >= 0 && lastClickedIndex !== idx) {
+          const start = Math.min(lastClickedIndex, idx);
+          const end = Math.max(lastClickedIndex, idx);
+          for (let i = start; i <= end; i++) {
+            if (currentFiltered[i]) {
+              selectedSet.add(currentFiltered[i].href);
+            }
+          }
+        } else {
+          if (cb.checked) {
+            selectedSet.add(url);
+          } else {
+            selectedSet.delete(url);
+          }
+        }
+
+        lastClickedIndex = idx;
+        render();
+        updateDock();
       });
     });
 
@@ -553,13 +827,18 @@ export function renderBookmarksManager(container) {
         const url = btn.dataset.url;
         store.toggleStarred(url);
         render();
+        if (selectedBookmark && selectedBookmark.href === url) {
+          openInspector(selectedBookmark);
+        }
       });
     });
 
-    // Auto-preview first bookmark on wide desktop screens if none selected
+    // Auto-open first bookmark in desktop view if not closed by user
     if (!selectedBookmark && filtered.length > 0 && window.innerWidth >= 1280 && !userClosedInspector) {
       openInspector(filtered[0]);
     }
+
+    updateDock();
   }
 
   function openInspector(bm) {
@@ -582,6 +861,7 @@ export function renderBookmarksManager(container) {
     const favicon = getHighResFavicon(bm.href, bm.icon);
     const isStarred = store.isStarred(bm.href);
     const tags = bm.tags || [];
+    const health = store.getLinkHealth(bm.href);
 
     inspectorBody.innerHTML = `
       <div class="bm-preview-shell">
@@ -641,6 +921,23 @@ export function renderBookmarksManager(container) {
           </div>
         </div>
 
+        <!-- Broken Link Warning Banner (Phase 5) -->
+        ${health && health.status === 'broken' ? `
+          <div class="bm-broken-banner">
+            <div class="bm-broken-banner-left">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              <span>Dead or Unreachable Link</span>
+            </div>
+            <a href="https://web.archive.org/web/*/${encodeURI(bm.href)}" target="_blank" rel="noopener noreferrer" class="bm-wayback-btn">
+              <span>Wayback Machine ↗</span>
+            </a>
+          </div>
+        ` : ''}
+
         <!-- Live Website Preview Viewport -->
         <div class="bm-preview-viewport">
           <!-- Loading Overlay -->
@@ -670,27 +967,42 @@ export function renderBookmarksManager(container) {
           </div>
         </div>
 
-        <!-- Collapsible Details Bar (Collection, Tags, Notes, Delete) -->
+        <!-- Collapsible Details Bar (Collection, Tag Editor, Notes, Delete) -->
         <div class="bm-preview-meta-panel" id="bm-meta-panel">
           <div class="bm-meta-chips-row">
             <div class="bm-meta-chip">
               <span class="bm-meta-chip-label">Collection:</span>
               <span class="bm-meta-chip-val">${escapeHTML(bm.folder)}</span>
             </div>
-            ${tags.map(t => `<span class="bm-tag-pill">${escapeHTML(t)}</span>`).join('')}
           </div>
+
+          <!-- Interactive Tag Editor -->
+          <div class="bm-tag-editor-row" id="bm-tag-editor-row">
+            ${tags.map((t, tIdx) => `
+              <span class="bm-tag-pill">
+                #${escapeHTML(t)}
+                <button class="bm-tag-del-btn" data-tag-idx="${tIdx}" title="Remove tag">×</button>
+              </span>
+            `).join('')}
+            <input type="text" class="bm-inspector-new-tag-input" id="bm-inspector-new-tag" placeholder="+ Add tag..." />
+          </div>
+
           ${bm.notes ? `
-            <div class="bm-meta-notes-box">
+            <div class="bm-meta-notes-box" style="margin-top: 8px;">
               ${escapeHTML(bm.notes)}
             </div>
           ` : ''}
-          ${bm.isCustom ? `
-            <div style="margin-top: 6px; display: flex; justify-content: flex-end;">
+
+          <div style="margin-top: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <a href="https://web.archive.org/web/*/${encodeURI(bm.href)}" target="_blank" rel="noopener noreferrer" style="font-size: 11px; color: var(--text-muted); text-decoration: none;">
+              🏛️ Wayback Machine
+            </a>
+            ${bm.isCustom ? `
               <button class="btn-secondary" id="btn-delete-custom-bm" style="font-size: 11px; padding: 3px 8px; color: var(--nothing-red); border-color: rgba(215, 25, 32, 0.3);">
                 Delete Bookmark
               </button>
-            </div>
-          ` : ''}
+            ` : ''}
+          </div>
         </div>
       </div>
     `;
@@ -704,12 +1016,12 @@ export function renderBookmarksManager(container) {
     const closeBtn = inspectorBody.querySelector('#btn-close-inspector-panel');
     const metaPanel = inspectorBody.querySelector('#bm-meta-panel');
     const deleteBtn = inspectorBody.querySelector('#btn-delete-custom-bm');
+    const tagEditorInput = inspectorBody.querySelector('#bm-inspector-new-tag');
 
     if (iframe && loader) {
       iframe.addEventListener('load', () => {
         loader.classList.add('hidden');
       });
-      // Dismiss spinner after 6 seconds in case page is slow or blocks load event
       setTimeout(() => {
         if (loader) loader.classList.add('hidden');
       }, 6000);
@@ -753,6 +1065,35 @@ export function renderBookmarksManager(container) {
       });
     }
 
+    // Tag Editor: Remove Tag
+    inspectorBody.querySelectorAll('.bm-tag-del-btn').forEach(delBtn => {
+      delBtn.addEventListener('click', () => {
+        const tIdx = parseInt(delBtn.dataset.tagIdx, 10);
+        const updatedTags = tags.filter((_, idx) => idx !== tIdx);
+        store.updateBookmarkMetadata(bm.href, { tags: updatedTags });
+        bm.tags = updatedTags;
+        openInspector(bm);
+        render();
+      });
+    });
+
+    // Tag Editor: Add Tag on Enter
+    if (tagEditorInput) {
+      tagEditorInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const val = tagEditorInput.value.trim().replace(/^#/, '');
+          if (val && !tags.includes(val)) {
+            const updatedTags = [...tags, val];
+            store.updateBookmarkMetadata(bm.href, { tags: updatedTags });
+            bm.tags = updatedTags;
+            openInspector(bm);
+            render();
+          }
+        }
+      });
+    }
+
     if (deleteBtn) {
       deleteBtn.addEventListener('click', () => {
         if (confirm(`Delete bookmark "${bm.name}"?`)) {
@@ -765,10 +1106,298 @@ export function renderBookmarksManager(container) {
     }
   }
 
-  // Event Listeners
-  if (btnCloseInspector) {
-    btnCloseInspector.addEventListener('click', () => inspectorDrawer.classList.remove('open'));
+  // Multi-Select Batch Actions
+  if (selectAllBox) {
+    selectAllBox.addEventListener('change', () => {
+      if (selectAllBox.checked) {
+        currentFiltered.forEach(b => selectedSet.add(b.href));
+      } else {
+        selectedSet.clear();
+      }
+      render();
+      updateDock();
+    });
   }
+
+  if (btnDockClear) {
+    btnDockClear.addEventListener('click', () => {
+      selectedSet.clear();
+      render();
+      updateDock();
+    });
+  }
+
+  if (btnDockStar) {
+    btnDockStar.addEventListener('click', () => {
+      const urls = Array.from(selectedSet);
+      store.batchToggleStarred(urls, true);
+      render();
+    });
+  }
+
+  if (btnDockTag) {
+    btnDockTag.addEventListener('click', () => {
+      const tag = prompt('Enter tag to add to selected bookmarks:');
+      if (tag && tag.trim()) {
+        const cleanTag = tag.trim().replace(/^#/, '');
+        const urls = Array.from(selectedSet);
+        const all = getAllBookmarks();
+        urls.forEach(url => {
+          const item = all.find(b => b.href === url);
+          const existingTags = item ? (item.tags || []) : [];
+          if (!existingTags.includes(cleanTag)) {
+            store.updateBookmarkMetadata(url, { tags: [...existingTags, cleanTag] });
+          }
+        });
+        render();
+      }
+    });
+  }
+
+  if (btnDockCopy) {
+    btnDockCopy.addEventListener('click', async () => {
+      const urls = Array.from(selectedSet);
+      await navigator.clipboard.writeText(urls.join('\n'));
+      const orig = btnDockCopy.innerHTML;
+      btnDockCopy.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--emerald-primary);"><polyline points="20 6 9 17 4 12"></polyline></svg> <span>Copied!</span>`;
+      setTimeout(() => btnDockCopy.innerHTML = orig, 1400);
+    });
+  }
+
+  if (btnDockOpen) {
+    btnDockOpen.addEventListener('click', () => {
+      const urls = Array.from(selectedSet);
+      if (urls.length > 10) {
+        if (!confirm(`Open ${urls.length} tabs at once?`)) return;
+      }
+      urls.forEach(url => window.open(url, '_blank'));
+    });
+  }
+
+  if (btnDockDelete) {
+    btnDockDelete.addEventListener('click', () => {
+      const urls = Array.from(selectedSet);
+      if (confirm(`Delete ${urls.length} custom bookmark(s)?`)) {
+        store.batchDeleteCustomBookmarks(urls);
+        selectedSet.clear();
+        render();
+        updateDock();
+      }
+    });
+  }
+
+  // Import / Export Engine
+  if (btnImportExportToggle && importExportMenu) {
+    btnImportExportToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      importExportMenu.classList.toggle('open');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!importExportMenu.contains(e.target) && e.target !== btnImportExportToggle) {
+        importExportMenu.classList.remove('open');
+      }
+    });
+  }
+
+  // Export HTML (Netscape Bookmark file)
+  if (btnMenuExportHtml) {
+    btnMenuExportHtml.addEventListener('click', () => {
+      const all = getAllBookmarks();
+      let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<!-- This is an automatically generated file. It will be read and overwritten. DO NOT EDIT! -->\n<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n<TITLE>Deck Bookmarks</TITLE>\n<H1>Bookmarks</H1>\n<DL><p>\n`;
+      all.forEach(b => {
+        const title = escapeHTML(b.name || b.title);
+        const url = escapeAttr(b.href);
+        const icon = b.icon && b.icon.startsWith('data:') ? ` ICON="${escapeAttr(b.icon)}"` : '';
+        html += `    <DT><A HREF="${url}"${icon}>${title}</A>\n`;
+      });
+      html += `</DL><p>\n`;
+
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `deck_bookmarks_${new Date().toISOString().slice(0, 10)}.html`;
+      a.click();
+      importExportMenu.classList.remove('open');
+    });
+  }
+
+  // Export JSON Backup
+  if (btnMenuExportJson) {
+    btnMenuExportJson.addEventListener('click', () => {
+      const payload = {
+        version: '1.0',
+        exportedAt: new Date().toISOString(),
+        customBookmarks: store.state.customBookmarks || [],
+        starredBookmarks: Array.from(store.state.starredBookmarks || []),
+        overlayMetadata: store.state.overlayMetadata || {},
+        linkHealthCache: store.state.linkHealthCache || {}
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `deck_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      importExportMenu.classList.remove('open');
+    });
+  }
+
+  // File Upload Trigger
+  if (btnMenuImportFile && fileImportInput) {
+    btnMenuImportFile.addEventListener('click', () => {
+      fileImportInput.click();
+      importExportMenu.classList.remove('open');
+    });
+
+    fileImportInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const text = await file.text();
+      let importedCount = 0;
+
+      if (file.name.endsWith('.json')) {
+        try {
+          const data = JSON.parse(text);
+          const list = Array.isArray(data) ? data : (data.customBookmarks || []);
+          list.forEach(item => {
+            const url = item.url || item.href;
+            if (url && !(store.state.customBookmarks || []).some(b => (b.url || b.href) === url)) {
+              store.addCustomBookmark({
+                title: item.title || item.name || url,
+                url,
+                category: item.category || 'Imported Bookmarks',
+                tags: item.tags || [],
+                notes: item.notes || ''
+              });
+              importedCount++;
+            }
+          });
+          alert(`Imported ${importedCount} bookmarks from JSON!`);
+        } catch (err) {
+          alert('Failed to parse JSON file: ' + err.message);
+        }
+      } else {
+        // Parse HTML Netscape bookmarks
+        const linkRegex = /<A\s+HREF="([^"]+)"[^>]*>(.*?)<\/A>/gi;
+        let match;
+        const existingUrls = new Set(getAllBookmarks().map(b => b.href));
+
+        while ((match = linkRegex.exec(text)) !== null) {
+          const url = match[1];
+          const rawTitle = match[2].replace(/<[^>]+>/g, '').trim();
+          if (url && !url.startsWith('javascript:') && !existingUrls.has(url)) {
+            existingUrls.add(url);
+            store.addCustomBookmark({
+              title: rawTitle || url,
+              url,
+              category: 'Imported Bookmarks',
+              tags: ['Imported'],
+              notes: ''
+            });
+            importedCount++;
+          }
+        }
+        alert(`Imported ${importedCount} bookmarks from HTML!`);
+      }
+
+      fileImportInput.value = '';
+      render();
+    });
+  }
+
+  // 1-Click Sync from Chrome Bookmarks Bar
+  if (btnMenuSyncChrome) {
+    if (typeof chrome !== 'undefined' && chrome.bookmarks && chrome.bookmarks.getTree) {
+      btnMenuSyncChrome.addEventListener('click', () => {
+        importExportMenu.classList.remove('open');
+        chrome.bookmarks.getTree((tree) => {
+          let count = 0;
+          const existing = new Set(getAllBookmarks().map(b => b.href));
+
+          const walk = (nodes, folderName) => {
+            nodes.forEach(node => {
+              if (node.url && !existing.has(node.url)) {
+                existing.add(node.url);
+                store.addCustomBookmark({
+                  title: node.title || node.url,
+                  url: node.url,
+                  category: folderName || 'Chrome Bookmarks',
+                  tags: ['Chrome'],
+                  notes: ''
+                });
+                count++;
+              }
+              if (node.children) {
+                walk(node.children, node.title || folderName);
+              }
+            });
+          };
+
+          walk(tree, 'Chrome Bar');
+          alert(`Synced ${count} bookmarks directly from Chrome!`);
+          render();
+        });
+      });
+    } else {
+      btnMenuSyncChrome.addEventListener('click', () => {
+        alert('Chrome Bookmarks API is available when loaded as an unpacked extension in Developer Mode (chrome://extensions). For web mode, please use Upload HTML / JSON.');
+        importExportMenu.classList.remove('open');
+      });
+    }
+  }
+
+  // On-Demand Link Health Telemetry
+  async function runLinkAudit() {
+    if (isAuditing) return;
+    isAuditing = true;
+
+    if (btnScanLinks) {
+      btnScanLinks.classList.add('scanning');
+      btnScanLinks.innerHTML = `<div class="bm-preview-spinner" style="width: 12px; height: 12px; border-width: 1.5px;"></div> <span>Scanning...</span>`;
+    }
+
+    const all = getAllBookmarks();
+    const batchSize = 5;
+
+    for (let i = 0; i < all.length; i += batchSize) {
+      const chunk = all.slice(i, i + batchSize);
+      await Promise.all(chunk.map(async (bm) => {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 5000);
+          const res = await fetch(bm.href, {
+            method: 'HEAD',
+            mode: 'no-cors',
+            signal: controller.signal
+          });
+          clearTimeout(timer);
+          store.saveLinkHealth(bm.href, { status: 'healthy', code: res.status });
+        } catch (err) {
+          // If network failure or abort
+          const isTimeout = err.name === 'AbortError';
+          store.saveLinkHealth(bm.href, {
+            status: isTimeout ? 'broken' : 'healthy', // no-cors opaque resolves as healthy if completed
+            error: err.message
+          });
+        }
+      }));
+    }
+
+    isAuditing = false;
+    if (btnScanLinks) {
+      btnScanLinks.classList.remove('scanning');
+      btnScanLinks.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg> <span>Scan Links</span>`;
+    }
+    render();
+  }
+
+  if (btnScanLinks) {
+    btnScanLinks.addEventListener('click', runLinkAudit);
+  }
+
+  // Global event listener for link audit
+  window.addEventListener('deck:trigger-link-audit', runLinkAudit);
 
   // Search input live
   if (searchInput) {
@@ -829,6 +1458,7 @@ export function renderBookmarksManager(container) {
   filterButtons.forEach(btn => {
     btn.addEventListener('click', () => {
       filterButtons.forEach(b => b.classList.remove('active'));
+      if (tagsTree) tagsTree.querySelectorAll('.bm-tag-sidebar-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activeFilter = btn.dataset.filter;
       render();
@@ -875,6 +1505,8 @@ export function renderBookmarksManager(container) {
   // Reactive store updates
   store.on('bookmarks:updated', () => render());
   store.on('bookmarks:starred-changed', () => render());
+  store.on('bookmarks:metadata-updated', () => render());
+  store.on('bookmarks:health-updated', () => render());
 
   // Initial render
   render();

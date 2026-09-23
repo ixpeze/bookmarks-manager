@@ -20,7 +20,9 @@ export const STORAGE_KEYS = {
   DPDC_FIXED: 'deck_dpdc_fixed',
   DPDC_DATE: 'deck_dpdc_date',
   THEME: 'deck_theme',
-  GDRIVE_FOLDER: 'deck_gdrive_folder_name'
+  GDRIVE_FOLDER: 'deck_gdrive_folder_name',
+  LINK_HEALTH_CACHE: 'deck_link_health_cache',
+  OVERLAY_METADATA: 'deck_bookmark_metadata_overlay'
 };
 
 class Store {
@@ -40,6 +42,8 @@ class Store {
       dpdcBurnRate: parseFloat(localStorage.getItem(STORAGE_KEYS.DPDC_BURN_RATE)) || 95,
       dpdcFixed: parseFloat(localStorage.getItem(STORAGE_KEYS.DPDC_FIXED)) || 150,
       dpdcDate: localStorage.getItem(STORAGE_KEYS.DPDC_DATE) || new Date().toISOString().slice(0, 10),
+      linkHealthCache: this.loadJSON(STORAGE_KEYS.LINK_HEALTH_CACHE, {}),
+      overlayMetadata: this.loadJSON(STORAGE_KEYS.OVERLAY_METADATA, {}),
       toolbarZones: BOOKMARK_DATA.toolbarZones,
       library: BOOKMARK_DATA.library,
       defaultPrompts: BOOKMARK_DATA.defaultPrompts
@@ -150,6 +154,92 @@ class Store {
     this.saveJSON(STORAGE_KEYS.STARRED_BOOKMARKS, Array.from(this.state.starredBookmarks));
     this.emit('bookmarks:starred-changed', { url, starred: this.state.starredBookmarks.has(url) });
     return this.state.starredBookmarks.has(url);
+  }
+
+  batchToggleStarred(urls, targetState = null) {
+    let changed = false;
+    urls.forEach(url => {
+      if (targetState === true) {
+        if (!this.state.starredBookmarks.has(url)) {
+          this.state.starredBookmarks.add(url);
+          changed = true;
+        }
+      } else if (targetState === false) {
+        if (this.state.starredBookmarks.has(url)) {
+          this.state.starredBookmarks.delete(url);
+          changed = true;
+        }
+      } else {
+        // Toggle
+        if (this.state.starredBookmarks.has(url)) {
+          this.state.starredBookmarks.delete(url);
+        } else {
+          this.state.starredBookmarks.add(url);
+        }
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      this.saveJSON(STORAGE_KEYS.STARRED_BOOKMARKS, Array.from(this.state.starredBookmarks));
+      this.emit('bookmarks:starred-changed', { batch: true, count: this.state.starredBookmarks.size });
+    }
+  }
+
+  batchDeleteCustomBookmarks(urls) {
+    const urlSet = new Set(urls);
+    this.state.customBookmarks = this.state.customBookmarks.filter(b => !urlSet.has(b.url || b.href));
+    this.saveJSON(STORAGE_KEYS.CUSTOM_BOOKMARKS, this.state.customBookmarks);
+    this.emit('bookmarks:updated', this.state.customBookmarks);
+  }
+
+  updateBookmarkMetadata(url, { tags, notes, title }) {
+    // 1. If in customBookmarks, update directly
+    let foundInCustom = false;
+    this.state.customBookmarks = this.state.customBookmarks.map(b => {
+      if ((b.url || b.href) === url) {
+        foundInCustom = true;
+        return {
+          ...b,
+          tags: tags !== undefined ? tags : b.tags,
+          notes: notes !== undefined ? notes : b.notes,
+          title: title !== undefined ? title : (b.title || b.name),
+          name: title !== undefined ? title : (b.title || b.name)
+        };
+      }
+      return b;
+    });
+
+    if (foundInCustom) {
+      this.saveJSON(STORAGE_KEYS.CUSTOM_BOOKMARKS, this.state.customBookmarks);
+    } else {
+      // 2. Store in overlayMetadata for built-in library items
+      if (!this.state.overlayMetadata) this.state.overlayMetadata = {};
+      const current = this.state.overlayMetadata[url] || {};
+      this.state.overlayMetadata[url] = {
+        ...current,
+        tags: tags !== undefined ? tags : current.tags,
+        notes: notes !== undefined ? notes : current.notes,
+        title: title !== undefined ? title : current.title
+      };
+      this.saveJSON(STORAGE_KEYS.OVERLAY_METADATA, this.state.overlayMetadata);
+    }
+
+    this.emit('bookmarks:metadata-updated', { url, tags, notes, title });
+  }
+
+  saveLinkHealth(url, healthObj) {
+    if (!this.state.linkHealthCache) this.state.linkHealthCache = {};
+    this.state.linkHealthCache[url] = {
+      ...healthObj,
+      checkedAt: new Date().toISOString()
+    };
+    this.saveJSON(STORAGE_KEYS.LINK_HEALTH_CACHE, this.state.linkHealthCache);
+    this.emit('bookmarks:health-updated', { url, health: this.state.linkHealthCache[url] });
+  }
+
+  getLinkHealth(url) {
+    return (this.state.linkHealthCache && this.state.linkHealthCache[url]) || null;
   }
 
   isStarred(url) {

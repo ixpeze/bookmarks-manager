@@ -15,8 +15,12 @@ import bookmarksManagerModule from './modules/bookmarks-manager.js';
 import studio3DModule from './modules/studio-3d.js';
 import utilitiesModule from './modules/utilities.js';
 
+// Import Services
+import { CommandPaletteModal } from './services/omnibar.js';
+
 class DeckApp {
   constructor() {
+    window.deckApp = this;
     this.tabButtons = document.querySelectorAll('.tab-btn');
     this.tabPanes = document.querySelectorAll('.tab-pane');
     this.init();
@@ -29,14 +33,18 @@ class DeckApp {
     registry.register(studio3DModule);
     registry.register(utilitiesModule);
 
-    // 2. Bind UI Controls & Hotkeys
+    // 2. Initialize Command Palette
+    this.commandPalette = new CommandPaletteModal();
+    window.commandPalette = this.commandPalette;
+
+    // 3. Bind UI Controls & Hotkeys
     this.bindNavigation();
     this.bindThemeToggle();
     this.bindGoogleDriveModal();
     this.bindGlobalHotkeys();
     this.registerServiceWorker();
 
-    // 3. Mount Initial Tab
+    // 4. Mount Initial Tab
     let initialTab = store.state.activeTab || 'tab-command-center';
     if (initialTab === 'tab-library-explorer') {
       initialTab = 'tab-bookmarks';
@@ -244,6 +252,29 @@ class DeckApp {
 
   bindGlobalHotkeys() {
     document.addEventListener('keydown', (e) => {
+      // Toggle Command Palette with Ctrl+K or Cmd+K
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (this.commandPalette) this.commandPalette.toggle();
+        return;
+      }
+
+      // Quick slash / to open search palette when not typing in an input
+      if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        e.preventDefault();
+        if (this.commandPalette) this.commandPalette.open();
+        return;
+      }
+
+      // Escape to close Command Palette
+      if (e.key === 'Escape') {
+        if (this.commandPalette && this.commandPalette.modal && this.commandPalette.modal.classList.contains('open')) {
+          e.preventDefault();
+          this.commandPalette.close();
+          return;
+        }
+      }
+
       // Toggle Fullscreen with 'F' key if not typing in an input or textarea
       if (e.key.toLowerCase() === 'f' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
         e.preventDefault();

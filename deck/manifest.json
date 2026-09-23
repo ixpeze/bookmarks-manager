@@ -13,7 +13,8 @@
   "permissions": [
     "storage",
     "activeTab",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "bookmarks"
   ],
   "host_permissions": [
     "http://localhost/*",
