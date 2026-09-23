@@ -22,7 +22,8 @@ export const STORAGE_KEYS = {
   THEME: 'deck_theme',
   GDRIVE_FOLDER: 'deck_gdrive_folder_name',
   LINK_HEALTH_CACHE: 'deck_link_health_cache',
-  OVERLAY_METADATA: 'deck_bookmark_metadata_overlay'
+  OVERLAY_METADATA: 'deck_bookmark_metadata_overlay',
+  DELETED_BOOKMARKS: 'deck_deleted_bookmarks'
 };
 
 class Store {
@@ -36,6 +37,7 @@ class Store {
       customPrompts: this.loadJSON(STORAGE_KEYS.CUSTOM_PROMPTS, []),
       customBookmarks: this.loadJSON(STORAGE_KEYS.CUSTOM_BOOKMARKS, []),
       starredBookmarks: new Set(this.loadJSON(STORAGE_KEYS.STARRED_BOOKMARKS, [])),
+      deletedBookmarks: new Set(this.loadJSON(STORAGE_KEYS.DELETED_BOOKMARKS, [])),
       bookmarksViewMode: localStorage.getItem(STORAGE_KEYS.BOOKMARKS_VIEW_MODE) || 'cards',
       cloudConfig: this.loadJSON(STORAGE_KEYS.CLOUD_CONFIG, { url: '', key: '', autoSync: false }),
       dpdcBalance: parseFloat(localStorage.getItem(STORAGE_KEYS.DPDC_BALANCE)) || 2500,
@@ -186,11 +188,37 @@ class Store {
     }
   }
 
-  batchDeleteCustomBookmarks(urls) {
+  deleteBookmark(url, id = null) {
+    if (id) {
+      this.state.customBookmarks = this.state.customBookmarks.filter(b => b.id !== id);
+    } else {
+      this.state.customBookmarks = this.state.customBookmarks.filter(b => (b.url || b.href) !== url);
+    }
+    this.saveJSON(STORAGE_KEYS.CUSTOM_BOOKMARKS, this.state.customBookmarks);
+
+    if (url) {
+      this.state.deletedBookmarks.add(url);
+      this.saveJSON(STORAGE_KEYS.DELETED_BOOKMARKS, Array.from(this.state.deletedBookmarks));
+    }
+    this.emit('bookmarks:updated', this.state.customBookmarks);
+  }
+
+  batchDeleteBookmarks(urls) {
     const urlSet = new Set(urls);
     this.state.customBookmarks = this.state.customBookmarks.filter(b => !urlSet.has(b.url || b.href));
     this.saveJSON(STORAGE_KEYS.CUSTOM_BOOKMARKS, this.state.customBookmarks);
+
+    urls.forEach(u => this.state.deletedBookmarks.add(u));
+    this.saveJSON(STORAGE_KEYS.DELETED_BOOKMARKS, Array.from(this.state.deletedBookmarks));
     this.emit('bookmarks:updated', this.state.customBookmarks);
+  }
+
+  batchDeleteCustomBookmarks(urls) {
+    this.batchDeleteBookmarks(urls);
+  }
+
+  isDeleted(url) {
+    return this.state.deletedBookmarks && this.state.deletedBookmarks.has(url);
   }
 
   updateBookmarkMetadata(url, { tags, notes, title }) {

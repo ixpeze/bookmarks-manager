@@ -42,32 +42,37 @@ export function renderBookmarksManager(container) {
   // 1. Compile all library bookmarks + custom user bookmarks + overlay metadata
   function getAllBookmarks() {
     const overlay = store.state.overlayMetadata || {};
+    const deletedSet = store.state.deletedBookmarks || new Set();
     const libraryItems = BOOKMARK_DATA.library.flatMap((cat, idx) => flattenCategory(cat, '', idx));
-    const customItems = (store.state.customBookmarks || []).map(b => {
-      const url = b.url || b.href;
-      const meta = overlay[url] || {};
-      return {
-        name: meta.title || b.title || b.name,
-        href: url,
-        icon: b.favicon || b.icon || '',
-        folder: b.category || 'Custom Bookmarks',
-        tags: meta.tags || b.tags || [],
-        notes: meta.notes || b.notes || '',
-        id: b.id,
-        isCustom: true,
-        createdAt: b.createdAt || new Date().toISOString()
-      };
-    });
+    const customItems = (store.state.customBookmarks || [])
+      .filter(b => !deletedSet.has(b.url || b.href))
+      .map(b => {
+        const url = b.url || b.href;
+        const meta = overlay[url] || {};
+        return {
+          name: meta.title || b.title || b.name,
+          href: url,
+          icon: b.favicon || b.icon || '',
+          folder: b.category || 'Custom Bookmarks',
+          tags: meta.tags || b.tags || [],
+          notes: meta.notes || b.notes || '',
+          id: b.id,
+          isCustom: true,
+          createdAt: b.createdAt || new Date().toISOString()
+        };
+      });
 
-    const libraryMerged = libraryItems.map(it => {
-      const meta = overlay[it.href] || {};
-      return {
-        ...it,
-        name: meta.title || it.name,
-        tags: meta.tags || it.tags || [],
-        notes: meta.notes || it.notes || ''
-      };
-    });
+    const libraryMerged = libraryItems
+      .filter(it => !deletedSet.has(it.href))
+      .map(it => {
+        const meta = overlay[it.href] || {};
+        return {
+          ...it,
+          name: meta.title || it.name,
+          tags: meta.tags || it.tags || [],
+          notes: meta.notes || it.notes || ''
+        };
+      });
 
     return [...customItems, ...libraryMerged];
   }
@@ -267,11 +272,13 @@ export function renderBookmarksManager(container) {
       <main class="bm-center-feed">
         <!-- Top Toolbar -->
         <div class="bm-feed-toolbar">
-          <div class="bm-toolbar-left" style="display: flex; align-items: center; gap: 10px;">
-            <input type="checkbox" id="bm-select-all" class="bm-item-checkbox" title="Select All in current view" />
+          <div class="bm-toolbar-left" style="display: flex; align-items: baseline; gap: 10px;">
             <div>
               <div class="bm-feed-title" id="bm-feed-title">All Bookmarks</div>
-              <span class="bm-feed-counter" id="bm-feed-counter">Loading...</span>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="bm-feed-counter" id="bm-feed-counter">Loading...</span>
+                <button class="bm-btn-select-all" id="btn-toggle-select-all" title="Select / Deselect all visible bookmarks">Select All</button>
+              </div>
             </div>
           </div>
 
@@ -400,6 +407,7 @@ export function renderBookmarksManager(container) {
 
       <!-- Right 3rd Panel: Live Webpage Preview & Inspector -->
       <aside class="bm-inspector-drawer" id="bm-inspector-drawer">
+        <div class="bm-resizer-handle" id="bm-resizer-handle" title="Drag to resize live preview pane"></div>
         <div class="bm-inspector-body" id="bm-inspector-body">
           <div class="bm-inspector-empty">Select a bookmark to inspect details & live webpage preview</div>
         </div>
@@ -481,9 +489,56 @@ export function renderBookmarksManager(container) {
 
   const inspectorDrawer = container.querySelector('#bm-inspector-drawer');
   const inspectorBody = container.querySelector('#bm-inspector-body');
+  const resizerHandle = container.querySelector('#bm-resizer-handle');
+
+  // Load persisted inspector width
+  const savedInspectorWidth = localStorage.getItem('deck_inspector_width');
+  if (savedInspectorWidth) {
+    document.documentElement.style.setProperty('--inspector-width', `${savedInspectorWidth}px`);
+  }
+
+  // Draggable Inspector Resizer
+  if (resizerHandle && inspectorDrawer) {
+    let isDragging = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    resizerHandle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      isDragging = true;
+      startX = e.clientX;
+      startWidth = inspectorDrawer.getBoundingClientRect().width;
+      resizerHandle.classList.add('dragging');
+      document.body.classList.add('bm-resizing');
+
+      const onMouseMove = (moveEvent) => {
+        if (!isDragging) return;
+        // Drawer is anchored on the right edge; dragging left (smaller clientX) widens inspector
+        const deltaX = startX - moveEvent.clientX;
+        let newWidth = startWidth + deltaX;
+        const minW = 380;
+        const maxW = Math.floor(window.innerWidth * 0.72);
+        newWidth = Math.max(minW, Math.min(maxW, newWidth));
+        document.documentElement.style.setProperty('--inspector-width', `${newWidth}px`);
+      };
+
+      const onMouseUp = () => {
+        if (!isDragging) return;
+        isDragging = false;
+        resizerHandle.classList.remove('dragging');
+        document.body.classList.remove('bm-resizing');
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+        localStorage.setItem('deck_inspector_width', Math.round(inspectorDrawer.getBoundingClientRect().width));
+      };
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    });
+  }
 
   // Multi-Select Elements
-  const selectAllBox = container.querySelector('#bm-select-all');
+  const btnToggleSelectAll = container.querySelector('#btn-toggle-select-all');
   const floatingDock = container.querySelector('#bm-floating-dock');
   const selectedCountEl = container.querySelector('#bm-selected-count');
   const btnDockStar = container.querySelector('#btn-dock-star');
@@ -521,9 +576,12 @@ export function renderBookmarksManager(container) {
       floatingDock.classList.remove('visible');
     }
 
-    if (selectAllBox) {
-      selectAllBox.checked = currentFiltered.length > 0 && selectedSet.size === currentFiltered.length;
-      selectAllBox.indeterminate = selectedSet.size > 0 && selectedSet.size < currentFiltered.length;
+    if (btnToggleSelectAll) {
+      if (currentFiltered.length > 0 && selectedSet.size === currentFiltered.length) {
+        btnToggleSelectAll.textContent = 'Deselect All';
+      } else {
+        btnToggleSelectAll.textContent = 'Select All';
+      }
     }
   }
 
@@ -674,22 +732,27 @@ export function renderBookmarksManager(container) {
 
       if (viewMode === 'cards') {
         return `
-          <div class="bm-card ${isSelected ? 'selected' : ''} ${isItemChecked ? 'item-selected' : ''}" data-index="${idx}">
-            <div class="bm-item-select-wrap">
-              <input type="checkbox" class="bm-item-checkbox" data-index="${idx}" data-url="${escapeAttr(b.href)}" ${isItemChecked ? 'checked' : ''} />
-            </div>
-
-            <div class="bm-card-top" style="padding-left: ${isItemChecked ? '18px' : '0'};">
+          <div class="bm-card ${isSelected ? 'selected' : ''} ${isItemChecked ? 'item-selected' : ''}" data-index="${idx}" data-url="${escapeAttr(b.href)}">
+            <div class="bm-card-top">
               <div class="bm-card-source">
                 <img src="${favicon}" class="bm-card-icon" alt="" loading="lazy" onerror="this.style.display='none';" />
                 <span class="bm-domain-badge">${escapeHTML(domain)}</span>
                 ${health && health.status === 'broken' ? `<span class="bm-health-badge broken">Dead Link</span>` : ''}
               </div>
-              <button class="bm-star-btn ${isStarred ? 'active' : ''}" data-url="${escapeAttr(b.href)}" title="${isStarred ? 'Remove from favorites' : 'Add to favorites'}">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="${isStarred ? 'var(--amber-primary)' : 'none'}" stroke="currentColor" stroke-width="2">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                </svg>
-              </button>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <button class="bm-quick-delete-btn" data-url="${escapeAttr(b.href)}" data-id="${b.id || ''}" title="Quick Delete (Zero Prompts)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 6h18"></path>
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                  </svg>
+                </button>
+                <button class="bm-star-btn ${isStarred ? 'active' : ''}" data-url="${escapeAttr(b.href)}" title="${isStarred ? 'Remove from favorites' : 'Add to favorites'}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="${isStarred ? 'var(--amber-primary)' : 'none'}" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <div class="bm-card-title" title="${escapeAttr(b.name)}">${escapeHTML(b.name)}</div>
@@ -724,11 +787,7 @@ export function renderBookmarksManager(container) {
       } else {
         // List View
         return `
-          <div class="bm-row ${isSelected ? 'selected' : ''} ${isItemChecked ? 'item-selected' : ''}" data-index="${idx}">
-            <div class="bm-item-select-wrap" style="position: static; opacity: 1;">
-              <input type="checkbox" class="bm-item-checkbox" data-index="${idx}" data-url="${escapeAttr(b.href)}" ${isItemChecked ? 'checked' : ''} />
-            </div>
-
+          <div class="bm-row ${isSelected ? 'selected' : ''} ${isItemChecked ? 'item-selected' : ''}" data-index="${idx}" data-url="${escapeAttr(b.href)}">
             <div class="bm-row-left">
               <button class="bm-star-btn ${isStarred ? 'active' : ''}" data-url="${escapeAttr(b.href)}" title="Star">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="${isStarred ? 'var(--amber-primary)' : 'none'}" stroke="currentColor" stroke-width="2">
@@ -749,6 +808,13 @@ export function renderBookmarksManager(container) {
             </div>
 
             <div class="bm-row-right">
+              <button class="bm-quick-delete-btn" data-url="${escapeAttr(b.href)}" data-id="${b.id || ''}" title="Quick Delete (Zero Prompts)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 6h18"></path>
+                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                </svg>
+              </button>
               <a href="${escapeAttr(b.href)}" target="_blank" rel="noopener noreferrer" class="bm-row-open-btn" title="Open Link">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
@@ -770,10 +836,10 @@ export function renderBookmarksManager(container) {
       }
     }).join('');
 
-    // Bind item click to open inspector
+    // Bind item click (Normal click opens inspector; Ctrl/Cmd/Shift click selects)
     streamList.querySelectorAll('.bm-card, .bm-row').forEach(card => {
       card.addEventListener('click', (e) => {
-        if (e.target.closest('.bm-item-select-wrap') || e.target.closest('.bm-star-btn') || e.target.closest('.bm-card-open-btn') || e.target.closest('.bm-row-open-btn')) {
+        if (e.target.closest('.bm-quick-delete-btn') || e.target.closest('.bm-star-btn') || e.target.closest('.bm-card-open-btn') || e.target.closest('.bm-row-open-btn')) {
           return;
         }
         if (e.target.closest('.bm-tag-pill')) {
@@ -785,38 +851,50 @@ export function renderBookmarksManager(container) {
           }
         }
         const idx = parseInt(card.dataset.index, 10);
-        if (currentFiltered[idx]) {
-          openInspector(currentFiltered[idx]);
+        const bm = currentFiltered[idx];
+        if (!bm) return;
+
+        // Multi-selection with Ctrl/Cmd or Shift
+        if (e.ctrlKey || e.metaKey || e.shiftKey) {
+          e.preventDefault();
+          if (e.shiftKey && lastClickedIndex >= 0 && lastClickedIndex !== idx) {
+            const start = Math.min(lastClickedIndex, idx);
+            const end = Math.max(lastClickedIndex, idx);
+            for (let i = start; i <= end; i++) {
+              if (currentFiltered[i]) selectedSet.add(currentFiltered[i].href);
+            }
+          } else {
+            if (selectedSet.has(bm.href)) {
+              selectedSet.delete(bm.href);
+            } else {
+              selectedSet.add(bm.href);
+            }
+          }
+          lastClickedIndex = idx;
+          render();
+          updateDock();
+          return;
         }
+
+        // Normal click: open inspector
+        lastClickedIndex = idx;
+        openInspector(bm);
       });
     });
 
-    // Bind checkboxes (with Shift+Click range support)
-    streamList.querySelectorAll('.bm-item-checkbox').forEach(cb => {
-      cb.addEventListener('click', (e) => {
+    // Bind Quick Delete buttons (Instant, zero prompt)
+    streamList.querySelectorAll('.bm-quick-delete-btn').forEach(delBtn => {
+      delBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const idx = parseInt(cb.dataset.index, 10);
-        const url = cb.dataset.url;
-
-        if (e.shiftKey && lastClickedIndex >= 0 && lastClickedIndex !== idx) {
-          const start = Math.min(lastClickedIndex, idx);
-          const end = Math.max(lastClickedIndex, idx);
-          for (let i = start; i <= end; i++) {
-            if (currentFiltered[i]) {
-              selectedSet.add(currentFiltered[i].href);
-            }
-          }
-        } else {
-          if (cb.checked) {
-            selectedSet.add(url);
-          } else {
-            selectedSet.delete(url);
-          }
+        const url = delBtn.dataset.url;
+        const id = delBtn.dataset.id;
+        store.deleteBookmark(url, id);
+        selectedSet.delete(url);
+        if (selectedBookmark && selectedBookmark.href === url) {
+          selectedBookmark = null;
+          inspectorDrawer.classList.remove('open');
         }
-
-        lastClickedIndex = idx;
         render();
-        updateDock();
       });
     });
 
@@ -994,14 +1072,21 @@ export function renderBookmarksManager(container) {
           ` : ''}
 
           <div style="margin-top: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <a href="https://web.archive.org/web/*/${encodeURI(bm.href)}" target="_blank" rel="noopener noreferrer" style="font-size: 11px; color: var(--text-muted); text-decoration: none;">
-              🏛️ Wayback Machine
+            <a href="https://web.archive.org/web/*/${encodeURI(bm.href)}" target="_blank" rel="noopener noreferrer" style="font-size: 11px; color: var(--text-muted); text-decoration: none; display: flex; align-items: center; gap: 4px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              <span>Wayback Machine</span>
             </a>
-            ${bm.isCustom ? `
-              <button class="btn-secondary" id="btn-delete-custom-bm" style="font-size: 11px; padding: 3px 8px; color: var(--nothing-red); border-color: rgba(215, 25, 32, 0.3);">
-                Delete Bookmark
-              </button>
-            ` : ''}
+            <button class="btn-secondary" id="btn-delete-inspector-bm" style="font-size: 11px; padding: 3px 8px; color: var(--rose-primary); border-color: rgba(229, 62, 62, 0.3); display: flex; align-items: center; gap: 4px;" title="Delete bookmark immediately (no prompt)">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18"></path>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+              </svg>
+              <span>Delete Bookmark</span>
+            </button>
           </div>
         </div>
       </div>
@@ -1015,7 +1100,7 @@ export function renderBookmarksManager(container) {
     const toggleMetaBtn = inspectorBody.querySelector('#btn-toggle-meta-details');
     const closeBtn = inspectorBody.querySelector('#btn-close-inspector-panel');
     const metaPanel = inspectorBody.querySelector('#bm-meta-panel');
-    const deleteBtn = inspectorBody.querySelector('#btn-delete-custom-bm');
+    const deleteBtn = inspectorBody.querySelector('#btn-delete-inspector-bm');
     const tagEditorInput = inspectorBody.querySelector('#bm-inspector-new-tag');
 
     if (iframe && loader) {
@@ -1096,28 +1181,45 @@ export function renderBookmarksManager(container) {
 
     if (deleteBtn) {
       deleteBtn.addEventListener('click', () => {
-        if (confirm(`Delete bookmark "${bm.name}"?`)) {
-          store.deleteCustomBookmark(bm.id);
-          selectedBookmark = null;
-          inspectorDrawer.classList.remove('open');
-          render();
-        }
+        store.deleteBookmark(bm.href, bm.id);
+        selectedSet.delete(bm.href);
+        selectedBookmark = null;
+        inspectorDrawer.classList.remove('open');
+        render();
       });
     }
   }
 
-  // Multi-Select Batch Actions
-  if (selectAllBox) {
-    selectAllBox.addEventListener('change', () => {
-      if (selectAllBox.checked) {
-        currentFiltered.forEach(b => selectedSet.add(b.href));
-      } else {
+  // Multi-Select Toggle All Action
+  if (btnToggleSelectAll) {
+    btnToggleSelectAll.addEventListener('click', () => {
+      if (currentFiltered.length === 0) return;
+      if (selectedSet.size === currentFiltered.length) {
         selectedSet.clear();
+      } else {
+        currentFiltered.forEach(b => selectedSet.add(b.href));
       }
       render();
       updateDock();
     });
   }
+
+  // Ctrl+A / Cmd+A Keyboard Shortcut for visible bookmarks
+  container.addEventListener('keydown', (e) => {
+    if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      e.preventDefault();
+      if (currentFiltered.length > 0) {
+        if (selectedSet.size === currentFiltered.length) {
+          selectedSet.clear();
+        } else {
+          currentFiltered.forEach(b => selectedSet.add(b.href));
+        }
+        render();
+        updateDock();
+      }
+    }
+  });
 
   if (btnDockClear) {
     btnDockClear.addEventListener('click', () => {
@@ -1177,9 +1279,13 @@ export function renderBookmarksManager(container) {
   if (btnDockDelete) {
     btnDockDelete.addEventListener('click', () => {
       const urls = Array.from(selectedSet);
-      if (confirm(`Delete ${urls.length} custom bookmark(s)?`)) {
-        store.batchDeleteCustomBookmarks(urls);
+      if (urls.length > 0) {
+        store.batchDeleteBookmarks(urls);
         selectedSet.clear();
+        if (selectedBookmark && urls.includes(selectedBookmark.href)) {
+          selectedBookmark = null;
+          inspectorDrawer.classList.remove('open');
+        }
         render();
         updateDock();
       }

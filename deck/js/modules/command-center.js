@@ -235,11 +235,16 @@ export function renderCommandCenter(container) {
   initDhakaClock(container);
 
   // 2. Fetch Live Weather
-  fetchDhakaWeather((data) => {
+  fetchDhakaWeather().then(data => {
+    if (!data) return;
     const tempEl = container.querySelector('#weather-temp');
     const condEl = container.querySelector('#weather-condition');
+    const locEl = container.querySelector('#weather-location');
     if (tempEl) tempEl.textContent = `${data.temp}°C`;
     if (condEl) condEl.textContent = data.condition;
+    if (locEl) locEl.textContent = data.city || 'Dhaka';
+  }).catch(err => {
+    console.warn('[Deck Cockpit] Weather load error:', err);
   });
 
   // 3. Initialize Omnibar Slot

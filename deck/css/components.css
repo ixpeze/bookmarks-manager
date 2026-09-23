@@ -2411,7 +2411,7 @@
 /* Stream Views */
 .bm-stream-container.view-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
 }
 
@@ -2670,8 +2670,9 @@
  * Bookmarks 3rd Panel — Live Webpage Preview & Inspector
  * ============================================================================== */
 .bm-inspector-drawer {
-  width: 620px;
-  max-width: 48vw;
+  width: var(--inspector-width, 760px);
+  min-width: 380px;
+  max-width: 72vw;
   flex-shrink: 0;
   background: var(--bg-surface);
   border: 1px solid var(--border-medium);
@@ -2683,12 +2684,40 @@
   top: 76px;
   box-shadow: var(--shadow-card);
   animation: slide-in-right 0.2s ease-out forwards;
-  overflow: hidden;
+  overflow: visible;
   z-index: 20;
 }
 
 .bm-inspector-drawer.open {
   display: flex;
+}
+
+.bm-resizer-handle {
+  position: absolute;
+  top: 0;
+  left: -5px;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 50;
+  background: transparent;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.bm-resizer-handle:hover,
+.bm-resizer-handle.dragging {
+  background: var(--cyan-primary);
+  box-shadow: 0 0 10px var(--cyan-primary);
+}
+
+body.bm-resizing,
+body.bm-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+body.bm-resizing iframe {
+  pointer-events: none !important;
 }
 
 @keyframes slide-in-right {
@@ -2702,6 +2731,7 @@
   height: 100%;
   width: 100%;
   overflow: hidden;
+  border-radius: var(--radius-md);
 }
 
 .bm-preview-shell {
@@ -3048,34 +3078,61 @@
 /* ==============================================================================
  * Bookmarks Superpowers: Multi-Select, Tags, Health Telemetry, and Import/Export
  * ============================================================================== */
-.bm-item-select-wrap {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 5;
+.bm-quick-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0;
-  transition: opacity var(--transition-fast);
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
-.bm-card:hover .bm-item-select-wrap,
-.bm-card.item-selected .bm-item-select-wrap,
-.bm-row:hover .bm-item-select-wrap,
-.bm-row.item-selected .bm-item-select-wrap {
+.bm-card:hover .bm-quick-delete-btn,
+.bm-row:hover .bm-quick-delete-btn,
+.bm-quick-delete-btn:focus {
   opacity: 1;
 }
 
-.bm-item-checkbox {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--amber-primary);
-  cursor: pointer;
-  border-radius: 3px;
+.bm-quick-delete-btn:hover {
+  color: var(--rose-primary);
+  background: rgba(229, 62, 62, 0.15);
 }
 
 .bm-card.item-selected,
 .bm-row.item-selected {
   border-color: var(--amber-primary) !important;
-  background: rgba(237, 137, 54, 0.04) !important;
+  box-shadow: 0 0 0 1px var(--amber-primary), 0 0 14px rgba(237, 137, 54, 0.28) !important;
+  background: rgba(237, 137, 54, 0.06) !important;
+}
+
+.bm-card.selected:not(.item-selected),
+.bm-row.selected:not(.item-selected) {
+  border-color: var(--cyan-primary) !important;
+  box-shadow: 0 0 0 1px var(--cyan-primary), 0 0 12px rgba(99, 179, 237, 0.22) !important;
+}
+
+.bm-btn-select-all {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.2;
+}
+
+.bm-btn-select-all:hover {
+  color: var(--amber-primary);
+  border-color: var(--amber-primary);
+  background: rgba(237, 137, 54, 0.08);
 }
 
 .bm-tag-sidebar-btn {
