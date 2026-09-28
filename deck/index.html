@@ -62,6 +62,14 @@
 
       <!-- Nav Action Controls (Pinned Right) -->
       <div class="nav-actions">
+        <!-- Win32 Clipboard Ring Buffer (Ctrl+Shift+V) -->
+        <button class="nav-icon-btn" id="btn-open-clipboard" title="Win32 Clipboard Ring Buffer (Ctrl+Shift+V)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect>
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+          </svg>
+        </button>
+
         <!-- Theme Toggle (Dark Carbon / Light Alabaster) -->
         <button class="nav-icon-btn" id="btn-toggle-theme" title="Toggle Light / Dark Theme">
           <svg id="icon-theme" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -133,6 +141,13 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
           PC Files
         </button>
+        <button class="palette-tab-chip" data-category="clipboard">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect>
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+          </svg>
+          Clipboard
+        </button>
         <button class="palette-tab-chip" data-category="actions">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
           Actions
@@ -149,6 +164,12 @@
         </div>
         <div class="palette-footer-hint">
           <kbd>↵</kbd> <span>Open / Run</span>
+        </div>
+        <div class="palette-footer-hint">
+          <kbd>Shift+↵</kbd> <span>Explorer</span>
+        </div>
+        <div class="palette-footer-hint">
+          <kbd>Alt+C</kbd> <span>Copy</span>
         </div>
         <div class="palette-footer-hint">
           <kbd>Tab</kbd> <span>Switch Filter</span>
@@ -252,6 +273,109 @@
       </div>
 
       <div id="gdrive-feedback" style="margin-top: 14px; font-size: 11px; text-align: center; min-height: 16px; color: var(--text-muted);"></div>
+
+      <!-- Desktop Bridge Rolling Backups & Snapshots -->
+      <div style="margin-top: 16px; border-top: 1px solid var(--border-subtle); padding-top: 14px;">
+        <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span>Bridge Rolling Snapshots (Local / GDrive)</span>
+          <span id="bridge-backup-status-pill" style="font-family: var(--font-mono); font-size: 10px; color: var(--amber-primary);">10 Max</span>
+        </div>
+        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.4;">
+          The Desktop Bridge automatically snapshots Deck state every 30 minutes into <code>deck/deck_backups/</code> with rolling revisions.
+        </div>
+        <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+          <button class="btn-secondary" id="btn-create-snapshot" style="flex: 1; font-size: 11px; padding: 7px 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+              <polyline points="17 21 17 13 7 13 7 21"></polyline>
+              <polyline points="7 3 7 8 15 8"></polyline>
+            </svg>
+            Create Snapshot Now
+          </button>
+          <button class="btn-secondary" id="btn-refresh-snapshots" style="font-size: 11px; padding: 7px 10px;" title="Refresh Snapshots List">
+            ↻
+          </button>
+        </div>
+        <div id="bridge-snapshots-container" style="max-height: 140px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 4px;">
+          <div style="padding: 10px; font-size: 11px; color: var(--text-muted); text-align: center;">Loading snapshots...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Storage Heavy-Hitter Inspector Modal (Everything 1.5 IPC) -->
+  <div class="modal-overlay" id="storage-inspector-modal">
+    <div class="storage-modal-card">
+      <div class="storage-modal-header">
+        <div class="storage-modal-title-group">
+          <span class="card-icon-pill" style="color: var(--amber-primary);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 12H2"></path>
+              <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
+              <line x1="6" y1="16" x2="6.01" y2="16"></line>
+              <line x1="10" y1="16" x2="10.01" y2="16"></line>
+            </svg>
+          </span>
+          <div>
+            <div class="card-title" id="storage-inspector-title">Disk Storage Inspector</div>
+            <div class="storage-modal-subtitle" id="storage-inspector-subtitle">Zero-latency heavy file telemetry powered by Everything 1.5</div>
+          </div>
+        </div>
+        <button class="nav-icon-btn" id="btn-close-storage-modal" title="Close (Esc)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Drive Overview Bar -->
+      <div class="storage-drive-banner">
+        <div class="storage-drive-meta">
+          <span class="storage-drive-label" id="storage-drive-label">DRIVE C:</span>
+          <span class="storage-drive-stats" id="storage-drive-stats">Loading capacity...</span>
+        </div>
+        <div class="meter-bar-track" style="height: 6px; border-radius: 3px;">
+          <div class="meter-bar-fill" id="storage-drive-bar" style="width: 0%; background: var(--amber-primary);"></div>
+        </div>
+      </div>
+
+      <!-- Filter Controls Strip -->
+      <div class="storage-filter-strip">
+        <div class="storage-filter-chips">
+          <button class="storage-chip active" data-group="all">All Heavy Files</button>
+          <button class="storage-chip" data-group="3d">3D & Assets</button>
+          <button class="storage-chip" data-group="media">Media & Video</button>
+          <button class="storage-chip" data-group="archives">Archives & Installers</button>
+        </div>
+        <div class="storage-threshold-selector">
+          <label style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">Min Size:</label>
+          <select id="storage-threshold-select" class="storage-select">
+            <option value="500MB" selected>&gt; 500 MB</option>
+            <option value="1GB">&gt; 1 GB</option>
+            <option value="2GB">&gt; 2 GB</option>
+            <option value="5GB">&gt; 5 GB</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Heavy Files List Stream -->
+      <div class="storage-files-stream" id="storage-files-stream">
+        <div class="storage-loading-state">
+          <div class="loading-spinner"></div>
+          <div>Querying Everything 1.5 IPC index...</div>
+        </div>
+      </div>
+
+      <!-- Footer Action -->
+      <div class="storage-modal-footer">
+        <div class="storage-footer-summary" id="storage-footer-summary">
+          Scanning large files...
+        </div>
+        <button class="btn-secondary" id="btn-refresh-storage" style="font-size: 11px; padding: 6px 12px;">
+          Refresh
+        </button>
+      </div>
     </div>
   </div>
 

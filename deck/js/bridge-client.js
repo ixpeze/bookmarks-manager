@@ -34,7 +34,7 @@ const DEFAULT_DECK_CONFIG = {
       color: "#001e36",
       border: "#3182ce",
       icon: "image",
-      path: "C:\\Program Files\\Adobe\\Adobe Photoshop 2025\\Photoshop.exe",
+      path: "C:\\Program Files\\Adobe\\Adobe Photoshop 2026\\Photoshop.exe",
       args: ""
     },
     blender: {
@@ -43,7 +43,7 @@ const DEFAULT_DECK_CONFIG = {
       color: "#2c1c0a",
       border: "#dd6b20",
       icon: "cube",
-      path: "C:\\Program Files\\Blender Foundation\\Blender 4.5\\blender.exe",
+      path: "",
       args: ""
     },
     pureref: {
@@ -52,25 +52,25 @@ const DEFAULT_DECK_CONFIG = {
       color: "#1a202c",
       border: "#718096",
       icon: "layout",
-      path: "C:\\Program Files\\PureRef\\PureRef.exe",
+      path: "",
       args: ""
     },
     vscode: {
-      name: "VS Code",
-      tag: "CODE",
+      name: "Antigravity IDE",
+      tag: "AGY",
       color: "#0d1b2a",
       border: "#007acc",
       icon: "code",
-      path: "C:\\Users\\eudgi\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+      path: "C:\\Users\\xpeze\\AppData\\Local\\Programs\\Antigravity IDE\\Antigravity IDE.exe",
       args: ""
     }
   },
   quick_folders: [
-    { id: "ai_projects", name: "AI Projects", path: "D:\\AI", icon: "cpu" },
-    { id: "downloads", name: "Downloads", path: "C:\\Users\\eudgi\\Downloads", icon: "download" },
-    { id: "assets", name: "Assets", path: "D:\\AI", icon: "folder" },
-    { id: "gdrive", name: "Google Drive", path: "G:\\", icon: "cloud" },
-    { id: "comfy_output", name: "ComfyUI Outputs", path: "E:\\_AI\\ComfyUI\\Instances\\C_UI\\CUI\\ComfyUI\\output", icon: "film" }
+    { id: "ai_projects", name: "AI Projects", path: "G:\\AI", icon: "cpu" },
+    { id: "downloads", name: "Downloads", path: "C:\\Users\\xpeze\\Downloads", icon: "download" },
+    { id: "assets", name: "Assets", path: "F:\\", icon: "folder" },
+    { id: "scratch", name: "Scratch", path: "D:\\", icon: "hard-drive" },
+    { id: "gdrive", name: "Google Drive", path: "H:\\", icon: "cloud" }
   ]
 };
 
@@ -259,6 +259,20 @@ class DeckBridgeClient {
   }
 
   /**
+   * Launch Everything desktop GUI with search query
+   */
+  async openEverythingGUI(query = '') {
+    if (!this.isConnected) return false;
+    try {
+      const url = `${this.baseUrl}/api/everything/gui?q=${encodeURIComponent(query)}`;
+      const res = await fetch(url, { cache: 'no-store' });
+      return res.ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
    * Launch application by ID or custom executable path
    */
   async launchApp(appId, customPath = null) {
@@ -304,15 +318,27 @@ class DeckBridgeClient {
    * Open directory or highlight file in Windows Explorer
    */
   async openInExplorer(path) {
-    if (!this.isConnected) return false;
+    if (!this.isConnected) {
+      alert('Desktop Bridge is offline. Double-click launch_dashboard.bat on your desktop to enable Windows Explorer and native application launching.');
+      return false;
+    }
     try {
       const res = await fetch(`${this.baseUrl}/api/open-dir`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path })
       });
-      return res.ok;
+      if (res.ok) {
+        this.isConnected = true;
+        return true;
+      }
+      const errData = await res.json().catch(() => ({}));
+      console.warn('[DeckBridge] openInExplorer failed:', res.status, errData.message || '');
+      return false;
     } catch (e) {
+      console.error('[DeckBridge] openInExplorer network error:', e.message);
+      // Don't flip isConnected — a single fetch failure shouldn't mark bridge offline.
+      // The periodic status check handles real disconnections.
       return false;
     }
   }
@@ -342,6 +368,192 @@ class DeckBridgeClient {
   }
 
   /**
+   * Fetch Clipboard History items with optional query filter
+   */
+  async getClipboardHistory(query = '') {
+    if (!this.isConnected) return { items: [], total: 0 };
+    try {
+      const q = encodeURIComponent(query);
+      const res = await fetch(`${this.baseUrl}/api/clipboard?q=${q}`, {
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (_) {}
+    return { items: [], total: 0 };
+  }
+
+  /**
+   * Set text or image onto Windows OS clipboard via bridge & browser fallback
+   */
+  async copyToClipboard(payload) {
+    const isImage = typeof payload === 'object' && (payload.is_image || (payload.id && payload.id.startsWith('clip_') && payload.type === 'image'));
+    if (!isImage) {
+      const text = typeof payload === 'string' ? payload : (payload.text || '');
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText && text) {
+          await navigator.clipboard.writeText(text);
+        }
+      } catch (_) {}
+    }
+
+    if (!this.isConnected) return true;
+    try {
+      const body = typeof payload === 'string' ? { text: payload } : payload;
+      const res = await fetch(`${this.baseUrl}/api/clipboard/copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      return res.ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Send a native Windows 10/11 desktop toast notification
+   */
+  async sendToast(title = 'Deck Command Center', message = '') {
+    if (!this.isConnected) return false;
+    try {
+      const res = await fetch(`${this.baseUrl}/api/toast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, message })
+      });
+      return res.ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Pin or unpin clipboard item
+   */
+  async pinClipboardItem(id, pinned = true) {
+    if (!this.isConnected) return false;
+    try {
+      const res = await fetch(`${this.baseUrl}/api/clipboard/pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, pinned })
+      });
+      return res.ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Clear unpinned clipboard items
+   */
+  async clearClipboardHistory() {
+    if (!this.isConnected) return false;
+    try {
+      const res = await fetch(`${this.baseUrl}/api/clipboard/clear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      return res.ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Query heavy files >500MB/1GB via Everything 1.5 IPC
+   */
+  async getHeavyStorage(drive = 'C', threshold = '500MB', group = 'all') {
+    if (!this.isConnected) return { items: [], count: 0, total_formatted: '0 B' };
+    try {
+      const params = new URLSearchParams({ drive, threshold, group });
+      const res = await fetch(`${this.baseUrl}/api/storage/heavy?${params.toString()}`, {
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (_) {}
+    return { items: [], count: 0, total_formatted: '0 B' };
+  }
+
+  /**
+   * List available rolling backup snapshots
+   */
+  async listSnapshots() {
+    if (!this.isConnected) return { snapshots: [], last_backup: null };
+    try {
+      const res = await fetch(`${this.baseUrl}/api/backup/list`, {
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (_) {}
+    return { snapshots: [], last_backup: null };
+  }
+
+  /**
+   * Create rolling backup snapshot
+   */
+  async createSnapshot(state = {}) {
+    if (!this.isConnected) return { success: false, message: 'Bridge offline' };
+    try {
+      const res = await fetch(`${this.baseUrl}/api/backup/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state })
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    return { success: false, message: 'Bridge request failed' };
+  }
+
+  /**
+   * Restore a snapshot by filename
+   */
+  async restoreSnapshot(filename) {
+    if (!this.isConnected) return { success: false, message: 'Bridge offline' };
+    try {
+      const res = await fetch(`${this.baseUrl}/api/backup/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename })
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    return { success: false, message: 'Bridge request failed' };
+  }
+
+  /**
+   * Highlight/select file in Windows Explorer
+   */
+  async revealInExplorer(path) {
+    if (!this.isConnected) return false;
+    try {
+      const res = await fetch(`${this.baseUrl}/api/reveal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path })
+      });
+      return res.ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
    * Resolve dropped file from Explorer via Everything 1.5
    */
   async resolveDroppedFile(filename) {
@@ -361,7 +573,108 @@ class DeckBridgeClient {
     }
     return null;
   }
+
+  /**
+   * Fetch Win32 Clipboard Ring Buffer history
+   */
+  async getClipboardHistory(query = '') {
+    if (!this.isConnected) return { total: 0, items: [] };
+    try {
+      const url = `${this.baseUrl}/api/clipboard${query ? `?q=${encodeURIComponent(query)}` : ''}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('[DeckBridge] Clipboard query error:', e);
+    }
+    return { total: 0, items: [] };
+  }
+
+  /**
+   * Set text or image to Win32 & browser clipboard
+   */
+  async copyToClipboard(payload) {
+    let body = {};
+    if (typeof payload === 'string') {
+      body = { text: payload };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(payload);
+        }
+      } catch (_) {}
+    } else if (payload && typeof payload === 'object') {
+      body = payload;
+      if (payload.text) {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(payload.text);
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (!this.isConnected) return true;
+
+    try {
+      const res = await fetch(`${this.baseUrl}/api/clipboard/copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return !!data.success;
+      }
+    } catch (e) {
+      console.warn('[DeckBridge] Set clipboard error:', e);
+    }
+    return false;
+  }
+
+  /**
+   * Pin or unpin a clipboard history item
+   */
+  async pinClipboardItem(id, pinned = true) {
+    if (!this.isConnected) return false;
+    try {
+      const res = await fetch(`${this.baseUrl}/api/clipboard/pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, pinned })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return !!data.success;
+      }
+    } catch (e) {
+      console.warn('[DeckBridge] Pin clipboard error:', e);
+    }
+    return false;
+  }
+
+  /**
+   * Clear all unpinned clipboard items
+   */
+  async clearClipboardHistory() {
+    if (!this.isConnected) return false;
+    try {
+      const res = await fetch(`${this.baseUrl}/api/clipboard/clear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return !!data.success;
+      }
+    } catch (e) {
+      console.warn('[DeckBridge] Clear clipboard error:', e);
+    }
+    return false;
+  }
 }
 
 // Global Bridge Client Singleton
 window.deckBridge = new DeckBridgeClient();
+

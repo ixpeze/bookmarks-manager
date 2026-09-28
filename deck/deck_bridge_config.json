@@ -25,7 +25,7 @@
       "color": "#001e36",
       "border": "#3182ce",
       "icon": "image",
-      "path": "C:\\Program Files\\Adobe\\Adobe Photoshop 2025\\Photoshop.exe",
+      "path": "C:\\Program Files\\Adobe\\Adobe Photoshop 2026\\Photoshop.exe",
       "args": []
     },
     "blender": {
@@ -34,7 +34,7 @@
       "color": "#2c1c0a",
       "border": "#dd6b20",
       "icon": "cube",
-      "path": "C:\\Program Files\\Blender Foundation\\Blender 4.5\\blender.exe",
+      "path": "",
       "args": []
     },
     "pureref": {
@@ -43,16 +43,16 @@
       "color": "#1a202c",
       "border": "#718096",
       "icon": "layout",
-      "path": "C:\\Program Files\\PureRef\\PureRef.exe",
+      "path": "",
       "args": []
     },
     "vscode": {
-      "name": "VS Code",
-      "tag": "CODE",
+      "name": "Antigravity IDE",
+      "tag": "AGY",
       "color": "#0d1b2a",
       "border": "#007acc",
       "icon": "code",
-      "path": "C:\\Users\\eudgi\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+      "path": "C:\\Users\\xpeze\\AppData\\Local\\Programs\\Antigravity IDE\\Antigravity IDE.exe",
       "args": []
     }
   },
@@ -60,32 +60,32 @@
     {
       "id": "ai_projects",
       "name": "AI Projects",
-      "path": "D:\\AI",
+      "path": "G:\\AI",
       "icon": "cpu"
     },
     {
       "id": "downloads",
       "name": "Downloads",
-      "path": "C:\\Users\\eudgi\\Downloads",
+      "path": "C:\\Users\\xpeze\\Downloads",
       "icon": "download"
     },
     {
       "id": "assets",
       "name": "Assets",
-      "path": "D:\\AI",
+      "path": "F:\\",
       "icon": "folder"
+    },
+    {
+      "id": "scratch",
+      "name": "Scratch",
+      "path": "D:\\",
+      "icon": "hard-drive"
     },
     {
       "id": "gdrive",
       "name": "Google Drive",
-      "path": "G:\\",
+      "path": "H:\\",
       "icon": "cloud"
-    },
-    {
-      "id": "comfy_output",
-      "name": "ComfyUI Outputs",
-      "path": "E:\\_AI\\ComfyUI\\Instances\\C_UI\\CUI\\ComfyUI\\output",
-      "icon": "film"
     }
   ]
 }

@@ -25,3 +25,8 @@ test_*.js
 # Chrome extension runtime
 _metadata/
 **/_metadata/
+
+# Local Deck storage & backups
+deck/deck_clipboard.json
+deck/deck_backups/
+

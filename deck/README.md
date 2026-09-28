@@ -34,8 +34,8 @@ Zero complex cloud setup or API keys needed. Deck connects directly to your Goog
 - **Dhaka Ambient Clock & Date**: Large soft-sculpted typography, seconds pulse, Dhaka timezone (UTC+6), Gregorian & Hijri calendar dates.
 - **Live Weather**: Real-time temperature, condition, humidity via keyless Open-Meteo API.
 - **Universal Omnibar Search**:
-  - Engine switcher pills: **Google**, **Claude**, **ChatGPT**, **YouTube**, **TorrentBD**, **CGPeers**.
-  - Quick prefixes: `!c <query>` for Claude, `!g` for Google, `!yt` for YouTube, `!cg` for CGPeers.
+  - Engine switcher pills: **⚡ Everything (Local PC)**, **Google**, **Claude**, **ChatGPT**, **YouTube**, **GitHub**, **TorrentBD**.
+  - Quick prefixes: `!c <query>` for Claude, `!g` for Google, `!yt` for YouTube, `!gh` for GitHub, `!tbd` for TorrentBD, `e <query>` or `\<query>` for Everything PC.
   - Instant live fuzzy search across all bookmarks with keyboard navigation (`↑`/`↓`/`Enter`/`Esc`).
   - Press `/` anywhere to focus search.
 - **Pinned Daily Essentials**: Instant 1-click pills for top daily websites.

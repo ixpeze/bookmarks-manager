@@ -65,6 +65,15 @@ class DeckApp {
     if (btnFullscreen) {
       btnFullscreen.addEventListener('click', () => this.toggleFullscreen());
     }
+
+    const btnClipboard = document.querySelector('#btn-open-clipboard');
+    if (btnClipboard) {
+      btnClipboard.addEventListener('click', () => {
+        if (this.commandPalette) {
+          this.commandPalette.open('', 'clipboard');
+        }
+      });
+    }
   }
 
   bindThemeToggle() {
@@ -167,6 +176,7 @@ class DeckApp {
 
     btnOpen.addEventListener('click', () => {
       updateFolderUI();
+      loadBridgeSnapshots();
       feedback.textContent = '';
       modal.classList.add('open');
     });
@@ -248,6 +258,100 @@ class DeckApp {
         }
       });
     }
+
+    // Bridge Rolling Snapshots Section
+    const btnCreateSnap = document.querySelector('#btn-create-snapshot');
+    const btnRefreshSnaps = document.querySelector('#btn-refresh-snapshots');
+    const snapsContainer = document.querySelector('#bridge-snapshots-container');
+    const snapStatusPill = document.querySelector('#bridge-backup-status-pill');
+
+    const loadBridgeSnapshots = async () => {
+      if (!snapsContainer) return;
+      if (!window.deckBridge || !window.deckBridge.isConnected) {
+        snapsContainer.innerHTML = `<div style="padding: 10px; font-size: 11px; color: var(--text-muted); text-align: center;">Desktop Bridge offline</div>`;
+        if (snapStatusPill) snapStatusPill.textContent = 'Offline';
+        return;
+      }
+
+      const res = await window.deckBridge.listSnapshots();
+      const list = res.snapshots || [];
+      if (snapStatusPill) snapStatusPill.textContent = `${list.length} / 10`;
+
+      if (list.length === 0) {
+        snapsContainer.innerHTML = `<div style="padding: 10px; font-size: 11px; color: var(--text-muted); text-align: center;">No snapshots created yet</div>`;
+        return;
+      }
+
+      snapsContainer.innerHTML = list.map(s => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); font-size: 11px;">
+          <div>
+            <div style="font-weight: 600; color: var(--text-primary); font-family: var(--font-mono); font-size: 10.5px;">${s.filename}</div>
+            <div style="color: var(--text-muted); font-size: 10px;">${s.created_at} • ${s.size_formatted}</div>
+          </div>
+          <button class="btn-restore-snap" data-filename="${s.filename}" style="padding: 3px 8px; font-size: 10px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--cyan-primary); border-radius: 4px; cursor: pointer;">
+            Restore
+          </button>
+        </div>
+      `).join('');
+
+      snapsContainer.querySelectorAll('.btn-restore-snap').forEach(b => {
+        b.onclick = async () => {
+          const fname = b.dataset.filename;
+          if (confirm(`Restore Deck state from snapshot ${fname}?\nYour current browser state will be overwritten.`)) {
+            const restored = await window.deckBridge.restoreSnapshot(fname);
+            if (restored && restored.success && restored.state) {
+              Object.entries(restored.state).forEach(([k, v]) => {
+                try {
+                  localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+                } catch (_) {}
+              });
+              feedback.textContent = `State restored from ${fname}! Reloading...`;
+              feedback.style.color = 'var(--emerald-primary)';
+              setTimeout(() => location.reload(), 1000);
+            } else {
+              feedback.textContent = `Restore failed: ${restored.message || 'Unknown error'}`;
+              feedback.style.color = 'var(--rose-primary)';
+            }
+          }
+        };
+      });
+    };
+
+    if (btnCreateSnap) {
+      btnCreateSnap.addEventListener('click', async () => {
+        btnCreateSnap.disabled = true;
+        btnCreateSnap.textContent = 'Saving...';
+        const dump = {};
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('deck_')) {
+            dump[k] = localStorage.getItem(k);
+          }
+        }
+        const res = await window.deckBridge.createSnapshot(dump);
+        btnCreateSnap.disabled = false;
+        btnCreateSnap.innerHTML = `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
+          </svg>
+          Create Snapshot Now
+        `;
+        if (res && res.success) {
+          feedback.textContent = `Snapshot created: ${res.filename}`;
+          feedback.style.color = 'var(--emerald-primary)';
+          loadBridgeSnapshots();
+        } else {
+          feedback.textContent = `Snapshot failed: ${res.message || 'Unknown error'}`;
+          feedback.style.color = 'var(--rose-primary)';
+        }
+      });
+    }
+
+    if (btnRefreshSnaps) {
+      btnRefreshSnaps.addEventListener('click', loadBridgeSnapshots);
+    }
   }
 
   bindGlobalHotkeys() {
@@ -266,8 +370,22 @@ class DeckApp {
         return;
       }
 
-      // Escape to close Command Palette
+      // Ctrl+Shift+V directly opens Command Palette in Clipboard mode
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        if (this.commandPalette) this.commandPalette.open('', 'clipboard');
+        return;
+      }
+
+      // Escape to close Command Palette or Storage Inspector
       if (e.key === 'Escape') {
+        const storageModal = document.getElementById('storage-inspector-modal');
+        if (storageModal && storageModal.classList.contains('open')) {
+          e.preventDefault();
+          storageModal.classList.remove('open');
+          return;
+        }
+
         if (this.commandPalette && this.commandPalette.modal && this.commandPalette.modal.classList.contains('open')) {
           e.preventDefault();
           this.commandPalette.close();

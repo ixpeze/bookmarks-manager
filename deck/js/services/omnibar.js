@@ -8,36 +8,50 @@ import { BOOKMARK_DATA } from '../data/bookmarks.js';
 import { SearchEngine } from './search.js';
 
 const ENGINES = {
+  everything: {
+    name: 'Everything',
+    prefix: 'e',
+    aliases: ['ev', 'local', 'pc'],
+    isLocal: true,
+    url: null
+  },
   google: {
     name: 'Google',
+    prefix: 'g',
     url: 'https://www.google.com/search?q='
   },
   claude: {
     name: 'Claude',
+    prefix: 'c',
     url: 'https://claude.ai/new?q='
   },
   chatgpt: {
     name: 'ChatGPT',
+    prefix: 'gpt',
     url: 'https://chatgpt.com/?q='
   },
   youtube: {
     name: 'YouTube',
+    prefix: 'yt',
     url: 'https://www.youtube.com/results?search_query='
+  },
+  github: {
+    name: 'GitHub',
+    prefix: 'gh',
+    url: 'https://github.com/search?q='
   },
   torrentbd: {
     name: 'TorrentBD',
+    prefix: 'tbd',
     url: 'https://www.torrentbd.net/torrents-search.php?search='
-  },
-  cgpeers: {
-    name: 'CGPeers',
-    url: 'https://cgpeers.to/torrents.php?searchstr='
   }
 };
 
 export class Omnibar {
   constructor(containerEl) {
     this.container = containerEl;
-    this.currentEngine = store.state.searchEngine || 'google';
+    const stored = store.state.searchEngine || 'google';
+    this.currentEngine = ENGINES[stored] ? stored : 'google';
     this.allBookmarks = this.indexAllBookmarks();
     this.selectedIndex = -1;
     this.everythingDebounceTimer = null;
@@ -91,14 +105,14 @@ export class Omnibar {
           type="text" 
           class="omnibar-input" 
           id="omnibar-search-input"
-          placeholder="Search bookmarks, web, or Everything 1.5 PC files (prefix \\ or >)..." 
+          placeholder="Search bookmarks, web, or Everything PC (prefix e or \\)..." 
           autocomplete="off"
           spellcheck="false"
         />
         <div class="engine-selector">
           ${Object.entries(ENGINES).map(([key, eng]) => `
-            <button class="engine-pill ${key === this.currentEngine ? 'active' : ''}" data-engine="${key}">
-              ${eng.name}
+            <button class="engine-pill ${key === this.currentEngine ? 'active' : ''}" data-engine="${key}" title="${eng.isLocal ? 'Local PC Search via Everything 1.5 IPC (Prefix: e or ev)' : `Search ${eng.name} (Prefix: ${eng.prefix})`}">
+              ${eng.isLocal ? '<span class="pill-bolt">⚡</span> ' : ''}${eng.name}
             </button>
           `).join('')}
         </div>
@@ -108,6 +122,16 @@ export class Omnibar {
 
     this.input = this.container.querySelector('#omnibar-search-input');
     this.dropdown = this.container.querySelector('#omnibar-dropdown');
+    this.updatePlaceholder();
+  }
+
+  updatePlaceholder() {
+    if (!this.input) return;
+    if (this.currentEngine === 'everything' || ENGINES[this.currentEngine]?.isLocal) {
+      this.input.placeholder = "Search local PC files & folders via Everything 1.5 IPC (e.g. *.uproject, *.blend)...";
+    } else {
+      this.input.placeholder = `Search bookmarks or ${ENGINES[this.currentEngine]?.name || 'Web'} (prefix e for Everything PC)...`;
+    }
   }
 
   bindEvents() {
@@ -140,13 +164,20 @@ export class Omnibar {
         }
       } else if (e.key === 'Enter') {
         e.preventDefault();
+        const query = this.input.value.trim();
+        const isEverythingMode = this.currentEngine === 'everything' || query.startsWith('\\') || query.startsWith('>');
         if (this.selectedIndex >= 0 && items[this.selectedIndex]) {
           const selected = items[this.selectedIndex];
           this.activateResultItem(selected);
         } else if (items.length > 0) {
           this.activateResultItem(items[0]);
+        } else if (isEverythingMode) {
+          if (window.deckBridge) {
+            window.deckBridge.openEverythingGUI(query.replace(/^(\\|>)/, '').trim());
+          }
+          this.closeDropdown();
         } else {
-          this.performWebSearch(this.input.value.trim());
+          this.performWebSearch(query);
         }
       } else if (e.key === 'Escape') {
         this.closeDropdown();
@@ -166,6 +197,17 @@ export class Omnibar {
         this.input.select();
       }
     });
+
+    // Bridge status listener for Everything IPC connection indication
+    window.addEventListener('deck:bridge-status', (e) => {
+      const isConn = e.detail && e.detail.connected;
+      const everythingPill = this.container.querySelector('.engine-pill[data-engine="everything"]');
+      if (everythingPill) {
+        everythingPill.title = isConn
+          ? 'Everything 1.5 IPC Connected (Instant Local PC Search)'
+          : 'Everything 1.5 Bridge Offline (Click to select, run launch_dashboard.bat to connect)';
+      }
+    });
   }
 
   setEngine(engKey) {
@@ -175,6 +217,10 @@ export class Omnibar {
       this.container.querySelectorAll('.engine-pill').forEach(b => {
         b.classList.toggle('active', b.dataset.engine === engKey);
       });
+      this.updatePlaceholder();
+      if (this.input && this.input.value.trim()) {
+        this.handleInput(this.input.value.trim());
+      }
     }
   }
 
@@ -184,28 +230,37 @@ export class Omnibar {
       return;
     }
 
-    // Engine prefix shortcuts
-    if (query.startsWith('!c ')) {
-      this.setEngine('claude');
-      this.input.value = query.slice(3);
-      return;
-    } else if (query.startsWith('!g ')) {
-      this.setEngine('google');
-      this.input.value = query.slice(3);
-      return;
-    } else if (query.startsWith('!yt ')) {
-      this.setEngine('youtube');
-      this.input.value = query.slice(4);
-      return;
-    } else if (query.startsWith('!cg ')) {
-      this.setEngine('cgpeers');
-      this.input.value = query.slice(4);
+    // Direct Everything prefix triggers: \ or >
+    if (query.startsWith('\\') || query.startsWith('>')) {
+      const payload = query.slice(1).trim();
+      if (this.currentEngine !== 'everything') {
+        this.setEngine('everything');
+      }
+      this.input.value = payload;
+      this.handleInput(payload);
       return;
     }
 
-    // Exclusive Everything 1.5 mode if starts with \ or >
-    const isExclusivePC = query.startsWith('\\') || query.startsWith('>');
-    const cleanQuery = isExclusivePC ? query.slice(1).trim() : query;
+    // Universal engine prefix shortcuts (e.g. 'c query', '!c query', 'gpt query', 'e query', 'ev query', etc.)
+    const prefixMatch = query.match(/^(!?[a-zA-Z0-9]+)\s+(.+)$/);
+    if (prefixMatch) {
+      const token = prefixMatch[1].replace(/^!/, '').toLowerCase();
+      const payload = prefixMatch[2];
+      const matchedKey = Object.keys(ENGINES).find(k => {
+        const eng = ENGINES[k];
+        return k === token || eng.prefix === token || (eng.aliases && eng.aliases.includes(token));
+      });
+      if (matchedKey) {
+        this.setEngine(matchedKey);
+        this.input.value = payload;
+        this.handleInput(payload.trim());
+        return;
+      }
+    }
+
+    // Exclusive Everything 1.5 mode if engine is 'everything' or starts with \ or >
+    const isExclusivePC = this.currentEngine === 'everything' || query.startsWith('\\') || query.startsWith('>');
+    const cleanQuery = query.startsWith('\\') || query.startsWith('>') ? query.slice(1).trim() : query;
 
     const bookmarkResults = isExclusivePC ? [] : SearchEngine.search(this.allBookmarks, cleanQuery, { limit: 5 });
 
@@ -213,21 +268,65 @@ export class Omnibar {
     this.renderUnifiedResults(bookmarkResults, [], cleanQuery, isExclusivePC);
 
     // Fetch Everything results if bridge is connected
-    if (window.deckBridge && window.deckBridge.isConnected && cleanQuery.length >= 2) {
+    if (cleanQuery.length >= 1) {
       if (this.everythingDebounceTimer) clearTimeout(this.everythingDebounceTimer);
       this.everythingDebounceTimer = setTimeout(async () => {
-        const fileLimit = isExclusivePC ? 10 : 5;
+        if (!window.deckBridge || !window.deckBridge.isConnected) {
+          if (isExclusivePC) {
+            this.renderUnifiedResults([], [], cleanQuery, isExclusivePC);
+          }
+          return;
+        }
+        const fileLimit = isExclusivePC ? 14 : 5;
         const fileResults = await window.deckBridge.searchEverything(cleanQuery, fileLimit);
         // Only update if current query still matches
-        if (this.input.value.trim().endsWith(cleanQuery)) {
+        if (this.input.value.trim().endsWith(cleanQuery) || this.input.value.trim() === cleanQuery) {
           this.renderUnifiedResults(bookmarkResults, fileResults, cleanQuery, isExclusivePC);
         }
-      }, 120);
+      }, 100);
     }
   }
 
   renderUnifiedResults(bookmarkResults, fileResults, query, isExclusivePC) {
     if (bookmarkResults.length === 0 && fileResults.length === 0) {
+      if (isExclusivePC) {
+        const isOffline = !(window.deckBridge && window.deckBridge.isConnected);
+        this.dropdown.innerHTML = `
+          <div class="result-item" style="cursor: pointer;" id="${isOffline ? 'bridge-offline-action' : 'open-everything-gui-empty'}">
+            <div class="result-left">
+              <span class="file-icon-badge" style="background: ${isOffline ? 'rgba(239, 68, 68, 0.15)' : 'rgba(6, 182, 212, 0.15)'}; color: ${isOffline ? 'var(--rose-primary)' : 'var(--cyan-primary)'};">
+                ${isOffline ? `
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                ` : `
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                `}
+              </span>
+              <div>
+                <div class="result-title">${isOffline ? 'Everything 1.5 Bridge Offline' : `No local PC files matching "<em>${this.escapeHTML(query)}</em>"`}</div>
+                <div class="result-url">${isOffline ? 'Run launch_dashboard.bat to connect to local Everything 1.5 IPC' : 'Click or press Enter to search in Everything 1.5 desktop app'}</div>
+              </div>
+            </div>
+            <span class="result-badge">${isOffline ? 'Retry Status' : 'Open Desktop ↗'}</span>
+          </div>
+        `;
+        const offlineBtn = this.dropdown.querySelector('#bridge-offline-action');
+        if (offlineBtn && window.deckBridge) {
+          offlineBtn.addEventListener('click', async () => {
+            await window.deckBridge.checkStatus();
+            this.handleInput(query);
+          });
+        }
+        const openEmptyBtn = this.dropdown.querySelector('#open-everything-gui-empty');
+        if (openEmptyBtn && window.deckBridge) {
+          openEmptyBtn.addEventListener('click', () => {
+            window.deckBridge.openEverythingGUI(query);
+            this.closeDropdown();
+          });
+        }
+        this.openDropdown();
+        return;
+      }
+
       this.dropdown.innerHTML = `
         <div class="result-item" id="web-search-action">
           <div class="result-left">
@@ -278,7 +377,7 @@ export class Omnibar {
     if (fileResults.length > 0) {
       html += `
         <div class="omnibar-group-header" style="display: flex; justify-content: space-between; align-items: center;">
-          <span>⚡ Everything 1.5 Desktop Files</span>
+          <span>⚡ Everything 1.5 Desktop Files (${fileResults.length})</span>
           <span style="font-size: 10px; color: var(--emerald-primary); text-transform: none; letter-spacing: normal;">Sub-millisecond IPC</span>
         </div>
       `;
@@ -320,22 +419,39 @@ export class Omnibar {
       });
     }
 
-    // 3. Web search action footer
-    html += `
-      <div class="result-item" id="web-search-action" style="border-top: 1px solid var(--border-subtle); margin-top: 4px;">
-        <div class="result-left">
-          <span class="result-title" style="color: var(--cyan-primary); display: inline-flex; align-items: center; gap: 6px;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="2" y1="12" x2="22" y2="12"></line>
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-            </svg>
-            Search ${ENGINES[this.currentEngine].name} for "<em>${this.escapeHTML(query)}</em>"
-          </span>
+    // 3. Bottom action item
+    if (isExclusivePC) {
+      html += `
+        <div class="result-item" id="open-everything-gui-action" style="border-top: 1px solid var(--border-subtle); margin-top: 4px;">
+          <div class="result-left">
+            <span class="result-title" style="color: var(--cyan-primary); display: inline-flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              Open "<em>${this.escapeHTML(query)}</em>" in Everything 1.5 Desktop Window
+            </span>
+          </div>
+          <span class="result-badge">Desktop App ↗</span>
         </div>
-        <span class="result-badge">Web Search ↗</span>
-      </div>
-    `;
+      `;
+    } else {
+      html += `
+        <div class="result-item" id="web-search-action" style="border-top: 1px solid var(--border-subtle); margin-top: 4px;">
+          <div class="result-left">
+            <span class="result-title" style="color: var(--cyan-primary); display: inline-flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              Search ${ENGINES[this.currentEngine].name} for "<em>${this.escapeHTML(query)}</em>"
+            </span>
+          </div>
+          <span class="result-badge">Web Search ↗</span>
+        </div>
+      `;
+    }
 
     this.dropdown.innerHTML = html;
     this.bindResultItemEvents(query);
@@ -347,6 +463,15 @@ export class Omnibar {
     const webBtn = this.dropdown.querySelector('#web-search-action');
     if (webBtn) {
       webBtn.addEventListener('click', () => this.performWebSearch(query));
+    }
+
+    // Everything desktop GUI button
+    const everythingGuiBtn = this.dropdown.querySelector('#open-everything-gui-action');
+    if (everythingGuiBtn && window.deckBridge) {
+      everythingGuiBtn.addEventListener('click', () => {
+        window.deckBridge.openEverythingGUI(query);
+        this.closeDropdown();
+      });
     }
 
     // File result primary click (launch)
@@ -404,6 +529,11 @@ export class Omnibar {
     if (!el) return;
     if (el.id === 'web-search-action') {
       this.performWebSearch(this.input.value.trim());
+    } else if (el.id === 'open-everything-gui-action' || el.id === 'open-everything-gui-empty') {
+      if (window.deckBridge) {
+        window.deckBridge.openEverythingGUI(this.input.value.trim().replace(/^(\\|>)/, '').trim());
+      }
+      this.closeDropdown();
     } else if (el.dataset.type === 'file') {
       const path = el.dataset.path;
       if (window.deckBridge && path) {
@@ -503,7 +633,7 @@ export class CommandPaletteModal {
 
     this.activeCategory = 'all';
     this.selectedIndex = -1;
-    this.categories = ['all', 'bookmarks', 'apps', 'files', 'actions'];
+    this.categories = ['all', 'bookmarks', 'apps', 'files', 'clipboard', 'actions'];
     this.debounceTimer = null;
     this.currentResults = [];
 
@@ -523,11 +653,20 @@ export class CommandPaletteModal {
     }
 
     // Category chip clicks
+    this.chips = this.modal.querySelectorAll('.palette-tab-chip');
     this.chips.forEach(chip => {
       chip.addEventListener('click', () => {
         this.setCategory(chip.dataset.category);
         if (this.input) this.input.focus();
       });
+    });
+
+    // Global shortcut Ctrl+Shift+V directly to Clipboard tab
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        this.open('', 'clipboard');
+      }
     });
 
     // Input listener
@@ -548,7 +687,25 @@ export class CommandPaletteModal {
           this.moveSelection(-1);
         } else if (e.key === 'Enter') {
           e.preventDefault();
+          if (e.shiftKey) {
+            const cur = this.currentResults[this.selectedIndex];
+            if (cur && cur.path && window.deckBridge) {
+              window.deckBridge.revealInExplorer(cur.path);
+              this.close();
+              return;
+            }
+          }
           this.executeSelected();
+        } else if (e.altKey && e.key.toLowerCase() === 'c') {
+          const cur = this.currentResults[this.selectedIndex];
+          if (cur) {
+            e.preventDefault();
+            const target = cur.path || cur.text || cur.url || cur.title;
+            if (target && window.deckBridge) {
+              window.deckBridge.copyToClipboard(target);
+              this.showCopiedFeedback();
+            }
+          }
         } else if (e.key === 'Escape') {
           e.preventDefault();
           this.close();
@@ -591,6 +748,21 @@ export class CommandPaletteModal {
     this.chips.forEach(c => {
       c.classList.toggle('active', c.dataset.category === cat);
     });
+    if (this.input) {
+      if (cat === 'clipboard') {
+        this.input.placeholder = 'Search clipboard clips, press Enter to copy, or pin to keep...';
+      } else if (cat === 'files') {
+        this.input.placeholder = 'Search local PC files via Everything 1.5 IPC (e.g. *.uproject, *.psd)...';
+      } else if (cat === 'bookmarks') {
+        this.input.placeholder = 'Search bookmarks by title, url, or folder...';
+      } else if (cat === 'apps') {
+        this.input.placeholder = 'Search workstation apps to launch...';
+      } else if (cat === 'actions') {
+        this.input.placeholder = 'Search system actions and dashboard navigation...';
+      } else {
+        this.input.placeholder = 'Search bookmarks, apps, Everything PC files, or type a command...';
+      }
+    }
     if (triggerRender) {
       this.handleInput(this.input ? this.input.value.trim() : '');
     }
@@ -605,18 +777,80 @@ export class CommandPaletteModal {
   handleInput(query) {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
 
-    // Immediate local render
+    // Support category prefixes in Command Palette (e.g. 'e query', 'ev query', '\query', '>query')
+    if (query.startsWith('\\') || query.startsWith('>')) {
+      const payload = query.slice(1).trim();
+      this.setCategory('files', false);
+      this.input.value = payload;
+      this.handleInput(payload);
+      return;
+    }
+
+    const filePrefixMatch = query.match(/^(!?(?:e|ev|pc|local|files?))\s+(.+)$/i);
+    if (filePrefixMatch) {
+      const payload = filePrefixMatch[2];
+      this.setCategory('files', false);
+      this.input.value = payload;
+      this.handleInput(payload.trim());
+      return;
+    }
+
+    // Clipboard dedicated tab
+    if (this.activeCategory === 'clipboard') {
+      if (window.deckBridge) {
+        window.deckBridge.getClipboardHistory(query).then(data => {
+          if (this.activeCategory === 'clipboard' && (!this.input || this.input.value.trim() === query)) {
+            this.renderClipboardResults(query, (data && data.items) ? data.items : []);
+          }
+        });
+      } else {
+        this.renderClipboardResults(query, []);
+      }
+      return;
+    }
+
+    // Immediate local render for other categories
     this.renderResults(query, []);
 
-    // Async Everything search if needed
-    if ((this.activeCategory === 'all' || this.activeCategory === 'files') && query.length >= 2 && window.deckBridge && window.deckBridge.isConnected) {
+    // Async Everything & Clipboard search for 'all' and 'files'
+    if (this.activeCategory === 'all' && query.length >= 2 && window.deckBridge && window.deckBridge.isConnected) {
       this.debounceTimer = setTimeout(async () => {
-        const fileLimit = this.activeCategory === 'files' ? 12 : 5;
-        const fileResults = await window.deckBridge.searchEverything(query, fileLimit);
+        const [fileResults, clipData] = await Promise.all([
+          window.deckBridge.searchEverything(query, 5),
+          window.deckBridge.getClipboardHistory(query)
+        ]);
+        if (this.input && this.input.value.trim() === query) {
+          const topClips = (clipData && clipData.items) ? clipData.items.slice(0, 3) : [];
+          this.renderResults(query, fileResults || [], topClips);
+        }
+      }, 100);
+    } else if (this.activeCategory === 'files' && query.length >= 2 && window.deckBridge && window.deckBridge.isConnected) {
+      this.debounceTimer = setTimeout(async () => {
+        const fileResults = await window.deckBridge.searchEverything(query, 14);
         if (this.input && this.input.value.trim() === query) {
           this.renderResults(query, fileResults || []);
         }
       }, 100);
+    }
+  }
+
+  formatTimeAgo(ts) {
+    if (!ts) return '';
+    const diffSec = Math.floor((Date.now() - ts) / 1000);
+    if (diffSec < 60) return 'just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    return `${Math.floor(diffHr / 24)}d ago`;
+  }
+
+  showCopiedFeedback() {
+    const escBadge = this.modal.querySelector('.palette-esc-badge');
+    if (escBadge) {
+      const orig = escBadge.innerHTML;
+      escBadge.innerHTML = `<span style="color: var(--emerald-primary);">COPIED</span>`;
+      setTimeout(() => { escBadge.innerHTML = orig; }, 1200);
     }
   }
 
@@ -870,17 +1104,59 @@ export class CommandPaletteModal {
       });
     }
 
+    // 5. Embedded Top Clipboard Matches (in 'all' mode)
+    if (clipResults && clipResults.length > 0) {
+      clipResults.forEach(c => {
+        const isImg = c.type === 'image' && !!c.preview_image;
+        items.push({
+          type: 'clipboard',
+          id: c.id,
+          isImage: isImg,
+          text: c.text,
+          previewImage: c.preview_image || null,
+          title: isImg ? (c.preview || `Screenshot (${c.width}×${c.height})`) : (c.preview || (c.text ? c.text.slice(0, 100) : '')),
+          subtitle: isImg ? `${c.width}×${c.height} px • Image Screenshot • ${this.formatTimeAgo(c.timestamp)}` : `${c.char_count} chars • ${this.formatTimeAgo(c.timestamp)}`,
+          badge: c.pinned ? 'PINNED' : (isImg ? 'IMAGE' : 'CLIP'),
+          pinned: !!c.pinned,
+          icon: isImg
+            ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--cyan-primary);"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path></svg>`
+            : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path></svg>`,
+          action: async () => {
+            if (window.deckBridge) {
+              if (isImg) {
+                await window.deckBridge.copyToClipboard({ id: c.id, is_image: true });
+              } else {
+                await window.deckBridge.copyToClipboard(c.text);
+              }
+              this.showCopiedFeedback();
+            }
+          }
+        });
+      });
+    }
+
     // Fallback: Web Search
     if (query.trim().length > 0) {
+      const prefixMatch = query.match(/^(!?[a-zA-Z0-9]+)\s+(.+)$/);
+      let targetEng = store.state.searchEngine || 'google';
+      let cleanQ = query;
+      if (prefixMatch) {
+        const token = prefixMatch[1].replace(/^!/, '').toLowerCase();
+        const matched = Object.keys(ENGINES).find(k => k === token || ENGINES[k].prefix === token);
+        if (matched) {
+          targetEng = matched;
+          cleanQ = prefixMatch[2];
+        }
+      }
+      const engObj = ENGINES[targetEng] || ENGINES.google;
       items.push({
         type: 'web',
-        title: `Search Web for "${query}"`,
-        subtitle: `Open in default search engine (${store.state.searchEngine || 'Google'})`,
-        badge: 'Web ↗',
+        title: `Search ${engObj.name} for "${cleanQ}"`,
+        subtitle: `Open query in ${engObj.name} (Press Enter)`,
+        badge: `${engObj.name} ↗`,
         icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--cyan-primary);"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`,
         action: () => {
-          const engKey = store.state.searchEngine || 'google';
-          const url = (ENGINES[engKey] ? ENGINES[engKey].url : ENGINES.google.url) + encodeURIComponent(query);
+          const url = (engObj.url || ENGINES.google.url) + encodeURIComponent(cleanQ);
           window.open(url, '_blank', 'noopener,noreferrer');
         }
       });
@@ -906,21 +1182,158 @@ export class CommandPaletteModal {
     this.stream.innerHTML = items.map((item, idx) => `
       <div class="palette-result-item ${idx === 0 ? 'selected' : ''}" data-index="${idx}">
         <div class="palette-result-left">
-          <div class="palette-result-icon">${item.icon}</div>
+          ${item.isImage && item.previewImage ? `
+            <div class="palette-clip-thumb-wrap">
+              <img src="${item.previewImage}" alt="Screenshot" class="palette-clip-thumb" />
+            </div>
+          ` : `
+            <div class="palette-result-icon">${item.icon}</div>
+          `}
           <div class="palette-result-info">
             <div class="palette-result-title">${this.escapeHTML(item.title)}</div>
             <div class="palette-result-subtitle">${this.escapeHTML(item.subtitle)}</div>
           </div>
         </div>
-        <span class="palette-result-badge">${item.badge}</span>
+        <div class="palette-item-right-cluster">
+          <span class="palette-result-badge">${item.badge}</span>
+          ${item.type === 'file' ? `
+            <div class="palette-split-actions">
+              <button class="palette-action-icon-btn btn-reveal-file" data-index="${idx}" title="Reveal in File Explorer (Shift+Enter)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              </button>
+              <button class="palette-action-icon-btn btn-copy-filepath" data-index="${idx}" title="Copy Path (Alt+C)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
+              </button>
+            </div>
+          ` : ''}
+          ${item.type === 'clipboard' ? `
+            <div class="palette-split-actions">
+              <button class="palette-action-icon-btn btn-pin-clip ${item.pinned ? 'pinned' : ''}" data-id="${item.id}" data-pinned="${item.pinned}" title="${item.pinned ? 'Unpin' : 'Pin'}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="${item.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
+              </button>
+              <button class="palette-action-icon-btn btn-copy-clip" data-index="${idx}" title="${item.isImage ? 'Copy Screenshot (Enter / Click)' : 'Copy Text (Enter / Alt+C)'}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
+              </button>
+            </div>
+          ` : ''}
+        </div>
       </div>
     `).join('');
 
     this.selectedIndex = 0;
+    this.attachResultListeners();
+  }
 
-    // Click handlers
+  renderClipboardResults(query, clipItems) {
+    if (!this.stream) return;
+    if (!clipItems || clipItems.length === 0) {
+      this.stream.innerHTML = `
+        <div class="palette-empty-state">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect>
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+          </svg>
+          <div class="palette-empty-title">Clipboard history is empty</div>
+          <div class="palette-empty-sub">Copy any text or take a screenshot on your Windows PC to record clips automatically</div>
+        </div>
+      `;
+      this.currentResults = [];
+      this.selectedIndex = -1;
+      return;
+    }
+
+    const items = clipItems.map(c => {
+      const isImg = c.type === 'image' && !!c.preview_image;
+      return {
+        type: 'clipboard',
+        id: c.id,
+        isImage: isImg,
+        text: c.text,
+        previewImage: c.preview_image || null,
+        title: isImg ? (c.preview || `Screenshot (${c.width}×${c.height})`) : (c.preview || (c.text ? c.text.slice(0, 100) : '')),
+        subtitle: isImg ? `${c.width}×${c.height} px • Image Screenshot • ${this.formatTimeAgo(c.timestamp)}` : `${c.char_count} chars • ${this.formatTimeAgo(c.timestamp)}`,
+        badge: c.pinned ? 'PINNED' : (isImg ? 'IMAGE' : 'CLIP'),
+        pinned: !!c.pinned,
+        icon: isImg
+          ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--cyan-primary);"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path></svg>`
+          : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path></svg>`,
+        action: async () => {
+          if (window.deckBridge) {
+            if (isImg) {
+              await window.deckBridge.copyToClipboard({ id: c.id, is_image: true });
+            } else {
+              await window.deckBridge.copyToClipboard(c.text);
+            }
+            this.showCopiedFeedback();
+          }
+        }
+      };
+    });
+
+    this.currentResults = items;
+
+    const unpinnedCount = clipItems.filter(c => !c.pinned).length;
+    const headerHtml = `
+      <div class="palette-clip-header-strip">
+        <span class="palette-clip-header-title">Win32 Clipboard Ring Buffer • ${items.length} clips</span>
+        ${unpinnedCount > 0 ? `
+          <button class="palette-clip-clear-btn" id="btn-clear-unpinned-clips" title="Purge ${unpinnedCount} unpinned clips">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+            Clear Unpinned (${unpinnedCount})
+          </button>
+        ` : ''}
+      </div>
+    `;
+
+    this.stream.innerHTML = headerHtml + items.map((item, idx) => `
+      <div class="palette-result-item ${idx === 0 ? 'selected' : ''}" data-index="${idx}">
+        <div class="palette-result-left">
+          ${item.isImage && item.previewImage ? `
+            <div class="palette-clip-thumb-wrap">
+              <img src="${item.previewImage}" alt="Screenshot" class="palette-clip-thumb" />
+            </div>
+          ` : `
+            <div class="palette-result-icon" style="color: ${item.pinned ? 'var(--amber-primary)' : 'inherit'};">${item.icon}</div>
+          `}
+          <div class="palette-result-info">
+            <div class="palette-result-title" style="font-family: ${item.isImage ? 'var(--font-sans)' : 'var(--font-mono)'}; font-size: 12px;">${this.escapeHTML(item.title)}</div>
+            <div class="palette-result-subtitle">${this.escapeHTML(item.subtitle)}</div>
+          </div>
+        </div>
+        <div class="palette-item-right-cluster">
+          <span class="palette-result-badge ${item.pinned ? 'amber-glow' : ''}">${item.badge}</span>
+          <div class="palette-split-actions">
+            <button class="palette-action-icon-btn btn-pin-clip ${item.pinned ? 'pinned' : ''}" data-id="${item.id}" data-pinned="${item.pinned}" title="${item.pinned ? 'Unpin' : 'Pin to Top'}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="${item.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
+            </button>
+            <button class="palette-action-icon-btn btn-copy-clip" data-index="${idx}" title="${item.isImage ? 'Copy Screenshot (Enter / Click)' : 'Copy Text (Enter / Alt+C)'}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    const btnClear = this.stream.querySelector('#btn-clear-unpinned-clips');
+    if (btnClear) {
+      btnClear.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (window.deckBridge) {
+          await window.deckBridge.clearClipboardHistory();
+          this.handleInput(this.input ? this.input.value.trim() : '');
+        }
+      });
+    }
+
+    this.selectedIndex = 0;
+    this.attachResultListeners();
+  }
+
+  attachResultListeners() {
     this.stream.querySelectorAll('.palette-result-item').forEach(el => {
-      el.addEventListener('click', () => {
+      el.addEventListener('click', (e) => {
+        // If clicking split action button
+        if (e.target.closest('.palette-split-actions')) return;
         const idx = parseInt(el.dataset.index, 10);
         if (this.currentResults[idx]) {
           this.currentResults[idx].action();
@@ -931,6 +1344,63 @@ export class CommandPaletteModal {
         const idx = parseInt(el.dataset.index, 10);
         this.selectedIndex = idx;
         this.updateSelection();
+      });
+    });
+
+    // Reveal file buttons
+    this.stream.querySelectorAll('.btn-reveal-file').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.index, 10);
+        const item = this.currentResults[idx];
+        if (item && item.path && window.deckBridge) {
+          window.deckBridge.revealInExplorer(item.path);
+          this.close();
+        }
+      });
+    });
+
+    // Copy path buttons
+    this.stream.querySelectorAll('.btn-copy-filepath').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.index, 10);
+        const item = this.currentResults[idx];
+        if (item && item.path && window.deckBridge) {
+          window.deckBridge.copyToClipboard(item.path);
+          this.showCopiedFeedback();
+        }
+      });
+    });
+
+    // Pin clip buttons
+    this.stream.querySelectorAll('.btn-pin-clip').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        const isPinned = btn.dataset.pinned === 'true';
+        if (id && window.deckBridge) {
+          await window.deckBridge.pinClipboardItem(id, !isPinned);
+          this.handleInput(this.input ? this.input.value.trim() : '');
+        }
+      });
+    });
+
+    // Copy clip buttons
+    this.stream.querySelectorAll('.btn-copy-clip').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.index, 10);
+        const item = this.currentResults[idx];
+        if (item && window.deckBridge) {
+          if (item.isImage) {
+            await window.deckBridge.copyToClipboard({ id: item.id, is_image: true });
+          } else if (item.text) {
+            await window.deckBridge.copyToClipboard(item.text);
+          }
+          this.showCopiedFeedback();
+          this.close();
+        }
       });
     });
   }
