@@ -332,6 +332,16 @@
   background: var(--bg-card-elevated);
 }
 
+.result-item.direct-url-action {
+  background: rgba(56, 189, 248, 0.05);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 4px;
+}
+
+.result-item.direct-url-action:hover, .result-item.direct-url-action.selected {
+  background: rgba(56, 189, 248, 0.12);
+}
+
 .result-left {
   display: flex;
   align-items: center;
@@ -386,12 +396,65 @@
   width: 100%;
   position: relative;
   z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bookmark-toolbar-header-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 4px;
+}
+
+.toolbar-source-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 2px;
+  gap: 2px;
+}
+
+.toolbar-source-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.toolbar-source-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-elevated);
+}
+
+.toolbar-source-btn.active {
+  color: var(--text-primary);
+  background: var(--bg-card-elevated);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.toolbar-source-btn .source-icon {
+  font-size: 11px;
 }
 
 .bookmark-toolbar-card {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 4px;
   width: 100%;
   padding: 6px 14px;
   background: var(--bg-surface);
@@ -416,9 +479,102 @@
   width: 100%;
 }
 
-/* Individual Bookmark Item (Equally Distributed Horizontally Across Full Width) */
+/* Folder Item & Glass Popover */
+.toolbar-folder-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.toolbar-folder-svg {
+  color: #f59e0b;
+  transition: transform var(--transition-fast);
+}
+
+.toolbar-folder-btn:hover .toolbar-folder-svg {
+  transform: scale(1.15);
+}
+
+.toolbar-folder-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 340px;
+  overflow-y: auto;
+  background: var(--bg-card-elevated);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.7);
+  padding: 8px 6px;
+  z-index: 600;
+  display: none;
+}
+
+.toolbar-folder-popover.open {
+  display: block;
+  animation: popoverFadeIn 120ms ease;
+}
+
+@keyframes popoverFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.popover-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 4px;
+}
+
+.popover-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.popover-item-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 12px;
+  transition: background var(--transition-fast);
+}
+
+.popover-item-link:hover {
+  background: var(--bg-hover);
+}
+
+.popover-item-favicon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.popover-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+/* Individual Bookmark Item */
 .toolbar-item-btn {
-  flex: 1 1 0;
+  flex: 0 0 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

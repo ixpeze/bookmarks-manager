@@ -125,12 +125,31 @@ export class Omnibar {
     this.updatePlaceholder();
   }
 
+  isDirectUrl(query) {
+    if (!query) return null;
+    const str = query.trim();
+    // 1. Explicit protocol
+    if (/^(https?|ftp|file):\/\/[^\s/$.?#].[^\s]*$/i.test(str)) {
+      return str;
+    }
+    // 2. Localhost or IP with optional port/path
+    if (/^(localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/i.test(str)) {
+      return `http://${str}`;
+    }
+    // 3. Domain pattern: e.g. domain.com, sub.domain.org/path, etc.
+    if (/^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+(\/[^\s]*)?$/i.test(str)) {
+      if (str.startsWith('*.')) return null;
+      return `https://${str}`;
+    }
+    return null;
+  }
+
   updatePlaceholder() {
     if (!this.input) return;
     if (this.currentEngine === 'everything' || ENGINES[this.currentEngine]?.isLocal) {
       this.input.placeholder = "Search local PC files & folders via Everything 1.5 IPC (e.g. *.uproject, *.blend)...";
     } else {
-      this.input.placeholder = `Search bookmarks or ${ENGINES[this.currentEngine]?.name || 'Web'} (prefix e for Everything PC)...`;
+      this.input.placeholder = `Enter web address or search ${ENGINES[this.currentEngine]?.name || 'Web'} (Ctrl+L to focus address bar)...`;
     }
   }
 
@@ -166,11 +185,20 @@ export class Omnibar {
         e.preventDefault();
         const query = this.input.value.trim();
         const isEverythingMode = this.currentEngine === 'everything' || query.startsWith('\\') || query.startsWith('>');
+        const targetUrl = !isEverythingMode ? this.isDirectUrl(query) : null;
+
         if (this.selectedIndex >= 0 && items[this.selectedIndex]) {
           const selected = items[this.selectedIndex];
-          this.activateResultItem(selected);
+          this.activateResultItem(selected, e.ctrlKey || e.metaKey);
+        } else if (targetUrl) {
+          if (e.ctrlKey || e.metaKey) {
+            window.open(targetUrl, '_blank', 'noopener,noreferrer');
+          } else {
+            window.location.href = targetUrl;
+          }
+          this.closeDropdown();
         } else if (items.length > 0) {
-          this.activateResultItem(items[0]);
+          this.activateResultItem(items[0], e.ctrlKey || e.metaKey);
         } else if (isEverythingMode) {
           if (window.deckBridge) {
             window.deckBridge.openEverythingGUI(query.replace(/^(\\|>)/, '').trim());
@@ -191,7 +219,12 @@ export class Omnibar {
     });
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === '/' && document.activeElement !== this.input && document.activeElement.tagName !== 'TEXTAREA') {
+      // Universal address bar shortcuts: Ctrl+L, Alt+D, /
+      const isCtrlL = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l';
+      const isAltD = e.altKey && e.key.toLowerCase() === 'd';
+      const isSlash = e.key === '/' && document.activeElement !== this.input && !['TEXTAREA', 'INPUT'].includes(document.activeElement?.tagName);
+
+      if (isCtrlL || isAltD || isSlash) {
         e.preventDefault();
         this.input.focus();
         this.input.select();
@@ -327,7 +360,31 @@ export class Omnibar {
         return;
       }
 
-      this.dropdown.innerHTML = `
+      const targetUrl = !isExclusivePC ? this.isDirectUrl(query) : null;
+      let emptyHtml = '';
+
+      if (targetUrl) {
+        emptyHtml += `
+          <div class="result-item direct-url-action" id="direct-url-action" data-type="direct-url" data-url="${this.escapeHTML(targetUrl)}">
+            <div class="result-left">
+              <span class="file-icon-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--sky-primary);">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="2" y1="12" x2="22" y2="12"></line>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+              </span>
+              <div>
+                <div class="result-title">Navigate to <strong>${this.escapeHTML(targetUrl)}</strong></div>
+                <div class="result-url">Open website directly in browser</div>
+              </div>
+            </div>
+            <span class="result-badge" style="background: rgba(56, 189, 248, 0.2); color: var(--sky-primary); border-color: rgba(56, 189, 248, 0.4);">Go to URL ↵</span>
+          </div>
+        `;
+      }
+
+      emptyHtml += `
         <div class="result-item" id="web-search-action">
           <div class="result-left">
             <span class="result-title">Search <strong>${ENGINES[this.currentEngine].name}</strong> for "<em>${this.escapeHTML(query)}</em>"</span>
@@ -335,7 +392,15 @@ export class Omnibar {
           <span class="result-badge">Press Enter ↵</span>
         </div>
       `;
-      this.dropdown.querySelector('#web-search-action').addEventListener('click', () => {
+      this.dropdown.innerHTML = emptyHtml;
+
+      const directUrlBtn = this.dropdown.querySelector('#direct-url-action');
+      if (directUrlBtn) {
+        directUrlBtn.addEventListener('click', (e) => {
+          this.activateResultItem(directUrlBtn, e.ctrlKey || e.metaKey);
+        });
+      }
+      this.dropdown.querySelector('#web-search-action')?.addEventListener('click', () => {
         this.performWebSearch(query);
       });
       this.openDropdown();
@@ -344,6 +409,30 @@ export class Omnibar {
 
     this.selectedIndex = -1;
     let html = '';
+    const targetUrl = !isExclusivePC ? this.isDirectUrl(query) : null;
+
+    // 0. Direct URL Navigation action
+    if (targetUrl) {
+      html += `
+        <div class="omnibar-group-header">Address Bar Navigation</div>
+        <div class="result-item direct-url-action" id="direct-url-action" data-type="direct-url" data-url="${this.escapeHTML(targetUrl)}">
+          <div class="result-left">
+            <span class="file-icon-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--sky-primary);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+            </span>
+            <div>
+              <div class="result-title">Navigate to <strong>${this.escapeHTML(targetUrl)}</strong></div>
+              <div class="result-url">Open website directly in browser</div>
+            </div>
+          </div>
+          <span class="result-badge" style="background: rgba(56, 189, 248, 0.2); color: var(--sky-primary); border-color: rgba(56, 189, 248, 0.4);">Go to URL ↵</span>
+        </div>
+      `;
+    }
 
     // 1. Bookmark matches
     if (bookmarkResults.length > 0) {
@@ -525,8 +614,20 @@ export class Omnibar {
     });
   }
 
-  activateResultItem(el) {
+  activateResultItem(el, isNewTab = false) {
     if (!el) return;
+    if (el.id === 'direct-url-action' || el.dataset.type === 'direct-url' || el.classList.contains('direct-url-action')) {
+      const url = el.dataset.url || el.href;
+      if (url) {
+        if (isNewTab) {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        } else {
+          window.location.href = url;
+        }
+      }
+      this.closeDropdown();
+      return;
+    }
     if (el.id === 'web-search-action') {
       this.performWebSearch(this.input.value.trim());
     } else if (el.id === 'open-everything-gui-action' || el.id === 'open-everything-gui-empty') {
@@ -541,7 +642,11 @@ export class Omnibar {
       }
       this.closeDropdown();
     } else if (el.href) {
-      window.open(el.href, '_blank', 'noopener,noreferrer');
+      if (isNewTab) {
+        window.open(el.href, '_blank', 'noopener,noreferrer');
+      } else {
+        window.location.href = el.href;
+      }
       this.closeDropdown();
     }
   }

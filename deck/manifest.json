@@ -14,7 +14,8 @@
     "storage",
     "activeTab",
     "declarativeNetRequest",
-    "bookmarks"
+    "bookmarks",
+    "favicon"
   ],
   "host_permissions": [
     "http://localhost/*",
