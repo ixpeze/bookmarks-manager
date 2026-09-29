@@ -8,7 +8,8 @@
       "border": "#2c5282",
       "icon": "box",
       "path": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
-      "args": []
+      "args": [],
+      "exists": true
     },
     "3dsmax": {
       "name": "3ds Max",
@@ -17,7 +18,8 @@
       "border": "#2b6cb0",
       "icon": "layers",
       "path": "C:\\Program Files\\Autodesk\\3ds Max 2026\\3dsmax.exe",
-      "args": []
+      "args": [],
+      "exists": true
     },
     "photoshop": {
       "name": "Photoshop",
@@ -25,8 +27,9 @@
       "color": "#001e36",
       "border": "#3182ce",
       "icon": "image",
-      "path": "C:\\Program Files\\Adobe\\Adobe Photoshop 2026\\Photoshop.exe",
-      "args": []
+      "path": "C:\\Program Files\\Adobe\\Adobe Photoshop 2025\\Photoshop.exe",
+      "args": [],
+      "exists": true
     },
     "blender": {
       "name": "Blender",
@@ -35,7 +38,8 @@
       "border": "#dd6b20",
       "icon": "cube",
       "path": "",
-      "args": []
+      "args": [],
+      "exists": false
     },
     "pureref": {
       "name": "PureRef",
@@ -44,7 +48,8 @@
       "border": "#718096",
       "icon": "layout",
       "path": "",
-      "args": []
+      "args": [],
+      "exists": false
     },
     "vscode": {
       "name": "Antigravity IDE",
@@ -52,8 +57,9 @@
       "color": "#0d1b2a",
       "border": "#007acc",
       "icon": "code",
-      "path": "C:\\Users\\xpeze\\AppData\\Local\\Programs\\Antigravity IDE\\Antigravity IDE.exe",
-      "args": []
+      "path": "C:\\Users\\eudgi\\AppData\\Local\\Programs\\Antigravity\\Antigravity IDE.exe",
+      "args": [],
+      "exists": true
     }
   },
   "quick_folders": [

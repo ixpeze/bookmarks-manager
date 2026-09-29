@@ -13,6 +13,14 @@ Zero-dependency desktop companion service for Deck.
 
 import sys
 import os
+import tempfile
+
+# Prevent Python from writing __pycache__ or .pyc files inside the Chrome extension folder.
+# Chrome extensions reject directories containing files/folders starting with '_' (e.g. __pycache__).
+sys.dont_write_bytecode = True
+if hasattr(sys, "pycache_prefix"):
+    sys.pycache_prefix = os.path.join(tempfile.gettempdir(), "deck_pycache")
+
 import json
 import time
 import ctypes

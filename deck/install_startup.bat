@@ -9,29 +9,55 @@ echo.
 set "SCRIPT_DIR=%~dp0"
 set "TRAY_PY=%SCRIPT_DIR%tray_bridge.py"
 
-:: 1. Locate pythonw.exe
+:: Prevent Python bytecode generation inside extension folder
+set PYTHONDONTWRITEBYTECODE=1
+if exist "%SCRIPT_DIR%__pycache__" rmdir /s /q "%SCRIPT_DIR%__pycache__" >nul 2>&1
+
+:: 1. Universal Pythonw Runtime Discovery
 set "PYTHONW_BIN="
-where pythonw >nul 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=*" %%i in ('where pythonw') do (
+set "PYTHON_BIN="
+
+:: Check where.exe pythonw
+for /f "delims=" %%i in ('where.exe pythonw 2^>nul') do (
+    if not defined PYTHONW_BIN set "PYTHONW_BIN=%%i"
+)
+
+:: Check where.exe python
+for /f "delims=" %%i in ('where.exe python 2^>nul') do (
+    if not defined PYTHON_BIN set "PYTHON_BIN=%%i"
+)
+
+:: If python found, check for sibling pythonw.exe
+if defined PYTHON_BIN (
+    if not defined PYTHONW_BIN (
+        for %%F in ("!PYTHON_BIN!") do (
+            if exist "%%~dpFpythonw.exe" set "PYTHONW_BIN=%%~dpFpythonw.exe"
+        )
+    )
+)
+
+:: Check Windows Python Launcher (py -3)
+if not defined PYTHONW_BIN (
+    for /f "delims=" %%i in ('py -3 -c "import sys; print(sys.executable)" 2^>nul') do (
+        for %%F in ("%%i") do (
+            if exist "%%~dpFpythonw.exe" set "PYTHONW_BIN=%%~dpFpythonw.exe"
+        )
         if not defined PYTHONW_BIN set "PYTHONW_BIN=%%i"
     )
-) else if exist "C:\Python314\pythonw.exe" (
-    set "PYTHONW_BIN=C:\Python314\pythonw.exe"
-) else if exist "%LocalAppData%\Programs\Python\Python312\pythonw.exe" (
-    set "PYTHONW_BIN=%LocalAppData%\Programs\Python\Python312\pythonw.exe"
-) else (
-    where python >nul 2>&1
-    if %errorlevel% equ 0 (
-        for /f "tokens=*" %%i in ('where python') do (
-            set "PY_DIR=%%~dpi"
-            if exist "!PY_DIR!pythonw.exe" set "PYTHONW_BIN=!PY_DIR!pythonw.exe"
+)
+
+:: Scan standard Python install locations across versions (3.8 - 3.14)
+if not defined PYTHONW_BIN (
+    for /d %%D in ("%LocalAppData%\Programs\Python\Python3*" "C:\Python3*" "%ProgramFiles%\Python3*" "%ProgramFiles(x86)%\Python3*") do (
+        if not defined PYTHONW_BIN (
+            if exist "%%D\pythonw.exe" set "PYTHONW_BIN=%%D\pythonw.exe"
+            if exist "%%D\python.exe" set "PYTHONW_BIN=%%D\python.exe"
         )
     )
 )
 
 if not defined PYTHONW_BIN (
-    echo [ERROR] pythonw.exe could not be found!
+    echo [ERROR] python / pythonw could not be found!
     echo Please install Python with the standard Windows installer.
     pause
     exit /b 1
@@ -43,7 +69,7 @@ echo.
 
 :: 2. Register Windows CurrentVersion\Run Registry Key (Standard, clean, no terminal window)
 echo [2/2] Registering in Windows CurrentVersion\Run...
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "DeckDesktopBridge" /t REG_SZ /d "\"%PYTHONW_BIN%\" \"%TRAY_PY%\"" /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "DeckDesktopBridge" /t REG_SZ /d "\"%PYTHONW_BIN%\" -B \"%TRAY_PY%\"" /f >nul 2>&1
 
 if %errorlevel% equ 0 (
     echo       Registered HKCU Run key: DeckDesktopBridge
@@ -53,7 +79,7 @@ if %errorlevel% equ 0 (
     set "VBS_PATH=!STARTUP_FOLDER!\DeckBridge.vbs"
     (
         echo Set WshShell = CreateObject^("WScript.Shell"^)
-        echo WshShell.Run """%PYTHONW_BIN%"" """ ^& "%TRAY_PY%" ^& """", 0, False
+        echo WshShell.Run """%PYTHONW_BIN%"" -B """ ^& "%TRAY_PY%" ^& """", 0, False
     ) > "!VBS_PATH!"
     echo       Created Startup VBS: "!VBS_PATH!"
 )
@@ -70,7 +96,7 @@ set /p LAUNCH_NOW="Launch Deck System Tray Bridge now? [Y/N, default Y]: "
 if /i "%LAUNCH_NOW%"=="" set LAUNCH_NOW=Y
 if /i "%LAUNCH_NOW%"=="Y" (
     echo Starting silent tray daemon...
-    start "" "%PYTHONW_BIN%" "%TRAY_PY%"
+    start "" "%PYTHONW_BIN%" -B "%TRAY_PY%"
     echo Deck is now active in your system tray.
 )
 

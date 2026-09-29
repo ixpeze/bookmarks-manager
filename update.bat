@@ -32,6 +32,8 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [3/3] Opening Chrome Extensions page...
+:: Ensure no __pycache__ directory exists in deck before reloading
+if exist "%~dp0deck\__pycache__" rmdir /s /q "%~dp0deck\__pycache__" >nul 2>&1
 echo       ^> Locate "Deck" in your extensions list.
 echo       ^> Click the Reload / Refresh icon (round arrow).
 echo.

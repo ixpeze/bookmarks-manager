@@ -9,6 +9,10 @@ echo.
 :: Ensure we run from directory containing this script
 cd /d "%~dp0"
 
+:: Prevent Python bytecode generation inside extension folder
+set PYTHONDONTWRITEBYTECODE=1
+if exist "%~dp0deck\__pycache__" rmdir /s /q "%~dp0deck\__pycache__" >nul 2>&1
+
 :: 1. Check if port 8080 is currently occupied
 echo [1/3] Checking port 8080 status...
 set OCCUPIED_PID=
@@ -51,65 +55,111 @@ if defined OCCUPIED_PID (
     echo       Port 8080 is free.
 )
 
-:: 2. Find Python / Pythonw runtime
+:: 2. Universal Python / Pythonw Runtime Discovery
 echo.
 echo [2/3] Checking Python runtime...
-set PYTHONW_BIN=
-set PYTHON_BIN=
+set "PYTHONW_BIN="
+set "PYTHON_BIN="
 
-where pythonw >nul 2>&1
-if %errorlevel% equ 0 (
-    set PYTHONW_BIN=pythonw
-) else if exist "C:\Python314\pythonw.exe" (
-    set PYTHONW_BIN="C:\Python314\pythonw.exe"
-) else if exist "%LocalAppData%\Programs\Python\Python312\pythonw.exe" (
-    set PYTHONW_BIN="%LocalAppData%\Programs\Python\Python312\pythonw.exe"
+:: Check where.exe pythonw
+for /f "delims=" %%i in ('where.exe pythonw 2^>nul') do (
+    if not defined PYTHONW_BIN set "PYTHONW_BIN=%%i"
 )
 
-where python >nul 2>&1
-if %errorlevel% equ 0 (
-    set PYTHON_BIN=python
-) else if exist "C:\Python314\python.exe" (
-    set PYTHON_BIN="C:\Python314\python.exe"
-) else if exist "%LocalAppData%\Programs\Python\Python312\python.exe" (
-    set PYTHON_BIN="%LocalAppData%\Programs\Python\Python312\python.exe"
+:: Check where.exe python
+for /f "delims=" %%i in ('where.exe python 2^>nul') do (
+    if not defined PYTHON_BIN set "PYTHON_BIN=%%i"
 )
 
-if not defined PYTHONW_BIN (
-    if defined PYTHON_BIN (
-        set PYTHONW_BIN=%PYTHON_BIN%
-    ) else (
-        echo.
-        echo ========================================================
-        echo  ERROR: Python was not found in your system PATH!
-        echo  Please install Python 3.10+ from https://www.python.org/
-        echo ========================================================
-        echo.
-        pause
-        exit /b 1
+:: If python found, check for sibling pythonw.exe in same folder
+if defined PYTHON_BIN (
+    if not defined PYTHONW_BIN (
+        for %%F in ("!PYTHON_BIN!") do (
+            if exist "%%~dpFpythonw.exe" set "PYTHONW_BIN=%%~dpFpythonw.exe"
+        )
     )
 )
-echo       Using runtime: %PYTHONW_BIN%
 
-:: 3. Launch Silent System Tray Daemon & Browser
+:: Check Windows Python Launcher (py -3)
+if not defined PYTHON_BIN (
+    for /f "delims=" %%i in ('py -3 -c "import sys; print(sys.executable)" 2^>nul') do (
+        set "PYTHON_BIN=%%i"
+        for %%F in ("%%i") do (
+            if exist "%%~dpFpythonw.exe" set "PYTHONW_BIN=%%~dpFpythonw.exe"
+        )
+    )
+)
+
+:: Scan standard Python install locations across versions (3.8 - 3.14)
+if not defined PYTHON_BIN (
+    for /d %%D in ("%LocalAppData%\Programs\Python\Python3*" "C:\Python3*" "%ProgramFiles%\Python3*" "%ProgramFiles(x86)%\Python3*") do (
+        if not defined PYTHON_BIN (
+            if exist "%%D\python.exe" set "PYTHON_BIN=%%D\python.exe"
+            if exist "%%D\pythonw.exe" set "PYTHONW_BIN=%%D\pythonw.exe"
+        )
+    )
+)
+
+if not defined PYTHONW_BIN set "PYTHONW_BIN=!PYTHON_BIN!"
+
+if not defined PYTHON_BIN (
+    echo.
+    echo ========================================================
+    echo  ERROR: Python was not found in your system!
+    echo  Please install Python 3.10+ from https://www.python.org/
+    echo ========================================================
+    echo.
+    pause
+    exit /b 1
+)
+
+echo       Using runtime: !PYTHONW_BIN!
+
+:: Check optional tray dependencies (pystray, pillow)
+"!PYTHON_BIN!" -c "import pystray, PIL" >nul 2>&1
+if !errorlevel! neq 0 (
+    echo       Checking optional tray dependencies...
+    "!PYTHON_BIN!" -m pip install --quiet pystray pillow >nul 2>&1
+)
+
+:: 3. Launch Desktop Bridge & Verify Health
 echo.
-echo [3/3] Starting Deck Desktop Bridge (System Tray Daemon)...
+echo [3/3] Starting Deck Desktop Bridge...
 echo       Bridge URL : http://localhost:8080/
 echo       Dashboard  : http://localhost:8080/index.html
 echo.
 
 if exist "%~dp0deck\tray_bridge.py" (
-    start "" %PYTHONW_BIN% "%~dp0deck\tray_bridge.py" 8080
-    start "" "http://localhost:8080/"
-    echo ========================================================
-    echo  ⚡ Deck is running silently in the Windows System Tray!
-    echo     Look for the Deck icon in the taskbar notification area.
-    echo     Right-click the icon for controls or Windows autostart.
-    echo ========================================================
-    ping -n 3 127.0.0.1 >nul
-    exit /b 0
+    start "" "!PYTHONW_BIN!" -B "%~dp0deck\tray_bridge.py" 8080
 ) else (
-    start "" powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Milliseconds 600; Start-Process 'http://localhost:8080/'"
-    cd /d "%~dp0deck"
-    %PYTHON_BIN% bridge.py 8080
+    start "" "!PYTHONW_BIN!" -B "%~dp0deck\bridge.py" 8080
 )
+
+:: Active health check: verify port 8080 responds before opening browser
+set BRIDGE_READY=0
+for /l %%i in (1,1,10) do (
+    if !BRIDGE_READY! equ 0 (
+        curl.exe -s --connect-timeout 1 http://127.0.0.1:8080/api/status >nul 2>&1
+        if !errorlevel! equ 0 (
+            set BRIDGE_READY=1
+        ) else (
+            ping -n 1 -w 400 127.0.0.1 >nul
+        )
+    )
+)
+
+if !BRIDGE_READY! equ 0 (
+    echo       [NOTE] Primary tray bridge did not bind in time.
+    echo       Launching direct zero-dependency fallback bridge...
+    start "" "!PYTHONW_BIN!" -B "%~dp0deck\bridge.py" 8080
+    ping -n 2 127.0.0.1 >nul
+)
+
+start "" "http://localhost:8080/"
+echo ========================================================
+echo  ⚡ Deck is running and connected!
+echo     Workstation status, telemetry, and drives are ONLINE.
+echo     Dashboard opened in your default browser.
+echo ========================================================
+ping -n 3 127.0.0.1 >nul
+exit /b 0

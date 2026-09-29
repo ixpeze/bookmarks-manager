@@ -1,4 +1,4 @@
-name: Deploy Aura Dashboard to GitHub Pages
+name: Deploy Deck to GitHub Pages
 
 on:
   push:
@@ -30,7 +30,7 @@ jobs:
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './dashboard'
+          path: '.'
 
       - name: Deploy to GitHub Pages
         id: deployment

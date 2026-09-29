@@ -12,6 +12,14 @@ Runs Deck HTTP Bridge silently on port 8080 with:
 
 import sys
 import os
+import tempfile
+
+# Prevent Python from writing __pycache__ or .pyc files inside the Chrome extension folder.
+# Chrome extensions reject directories containing files/folders starting with '_' (e.g. __pycache__).
+sys.dont_write_bytecode = True
+if hasattr(sys, "pycache_prefix"):
+    sys.pycache_prefix = os.path.join(tempfile.gettempdir(), "deck_pycache")
+
 import json
 import time
 import socket
@@ -22,9 +30,34 @@ import winreg
 import urllib.request
 from http.server import ThreadingHTTPServer
 
-import pystray
-from pystray import MenuItem as item
-from PIL import Image, ImageDraw
+# Optional System Tray & Pillow Dependencies (Auto-healing & Headless Fallback)
+TRAY_AVAILABLE = False
+pystray = None
+item = None
+Image = None
+ImageDraw = None
+
+try:
+    import pystray
+    from pystray import MenuItem as item
+    from PIL import Image, ImageDraw
+    TRAY_AVAILABLE = True
+except ImportError:
+    # Attempt silent auto-installation if pip is available
+    try:
+        flags = 0x08000000 if sys.platform == "win32" else 0
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--quiet", "pystray", "pillow"],
+            capture_output=True,
+            timeout=25,
+            creationflags=flags
+        )
+        import pystray
+        from pystray import MenuItem as item
+        from PIL import Image, ImageDraw
+        TRAY_AVAILABLE = True
+    except Exception:
+        TRAY_AVAILABLE = False
 
 # Windows Console / Pythonw Stream Safety
 class _NullStream:
@@ -76,7 +109,7 @@ def set_autostart(enable: bool):
             if enable:
                 script_path = os.path.abspath(__file__)
                 pyw = get_pythonw_path()
-                cmd = f'"{pyw}" "{script_path}"'
+                cmd = f'"{pyw}" -B "{script_path}"'
                 winreg.SetValueEx(key, REG_RUN_KEY_NAME, 0, winreg.REG_SZ, cmd)
                 bridge.send_windows_toast("Deck Desktop Bridge", "Windows Startup enabled. Deck will run on boot.")
                 return True
@@ -94,6 +127,9 @@ def set_autostart(enable: bool):
 
 def create_tray_icon_image():
     """Generate or load high-DPI 64x64 system tray icon."""
+    if not TRAY_AVAILABLE or Image is None:
+        return None
+
     icon_path = os.path.join(SCRIPT_DIR, "deck_tray_icon.png")
     if os.path.exists(icon_path):
         try:
@@ -217,34 +253,50 @@ class DeckTrayDaemon:
             bridge.send_windows_toast("Deck Desktop Bridge", f"Failed to bind to port {self.port}.")
             sys.exit(1)
 
-        # 3. Create Tray Icon
-        img = create_tray_icon_image()
-        menu = pystray.Menu(
-            item("🌐 Open Dashboard", self.open_dashboard, default=True),
-            item("⚡ Everything 1.5 Search", self.open_everything),
-            item("📁 Open Workspace Folder", self.open_workspace_folder),
-            pystray.Menu.SEPARATOR,
-            item("🚀 Start with Windows", self.toggle_autostart, checked=lambda it: is_autostart_enabled()),
-            item("🔄 Restart Bridge", self.restart_bridge),
-            pystray.Menu.SEPARATOR,
-            item("❌ Exit Deck Bridge", self.stop)
-        )
+        # 3. Create Tray Icon or fallback to headless daemon loop
+        if TRAY_AVAILABLE and pystray is not None and Image is not None:
+            try:
+                img = create_tray_icon_image()
+                menu = pystray.Menu(
+                    item("🌐 Open Dashboard", self.open_dashboard, default=True),
+                    item("⚡ Everything 1.5 Search", self.open_everything),
+                    item("📁 Open Workspace Folder", self.open_workspace_folder),
+                    pystray.Menu.SEPARATOR,
+                    item("🚀 Start with Windows", self.toggle_autostart, checked=lambda it: is_autostart_enabled()),
+                    item("🔄 Restart Bridge", self.restart_bridge),
+                    pystray.Menu.SEPARATOR,
+                    item("❌ Exit Deck Bridge", self.stop)
+                )
 
-        self.icon = pystray.Icon(
-            name="DeckBridge",
-            icon=img,
-            title=f"Deck Desktop Bridge (Port {self.port}) — Online",
-            menu=menu
-        )
+                self.icon = pystray.Icon(
+                    name="DeckBridge",
+                    icon=img,
+                    title=f"Deck Desktop Bridge (Port {self.port}) — Online",
+                    menu=menu
+                )
 
-        # 4. Optional startup toast
+                bridge.send_windows_toast(
+                    "Deck Desktop Bridge",
+                    f"Bridge is online in system tray on port {self.port}. Double-click icon to open."
+                )
+
+                # Run pystray mainloop (blocks until exit)
+                self.icon.run()
+                return
+            except Exception as e:
+                print(f"[Tray] Tray icon initialization failed: {e}. Falling back to headless mode.")
+
+        # 4. Fallback: Headless background server mode (100% zero-dependency, runs on any PC)
         bridge.send_windows_toast(
             "Deck Desktop Bridge",
-            f"Bridge is online in system tray on port {self.port}. Double-click icon to open."
+            f"Deck Bridge is running silently on http://localhost:{self.port}/"
         )
-
-        # 5. Run pystray mainloop (blocks until exit)
-        self.icon.run()
+        print(f"[Tray] Deck Bridge running silently in headless background mode on port {self.port}.")
+        try:
+            while self.running:
+                time.sleep(1)
+        except (KeyboardInterrupt, SystemExit):
+            self.stop()
 
 
 if __name__ == "__main__":
