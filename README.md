@@ -66,4 +66,22 @@ deck/
         ├── studio-3d.js
         ├── library-explorer.js
         └── utilities.js
-```
+```
+
+---
+
+## Troubleshooting & Network Share Setup
+
+### Running from SMB/UNC Network Shares
+If hosting or accessing the Deck repository across a local network share (e.g. `\\192.168.11.11\FastShare\...` or mapped drives):
+1. **Git Dubious Ownership**: Windows SMB user SIDs may differ from local workstation SIDs, triggering `fatal: detected dubious ownership`. Add the share to git's safe directory whitelist:
+   ```powershell
+   git config --global --add safe.directory "%(prefix)///192.168.11.11/FastShare/Arman/CommonFiles/bookmarks-manager"
+   git config --global --add safe.directory "//192.168.11.11/FastShare/Arman/CommonFiles/bookmarks-manager"
+   ```
+   *(Note: `update.bat` automatically configures this self-healing exception on first run).*
+
+2. **Git Push / Pull Credential Disambiguation**: In automated or non-interactive environments with multiple GitHub credentials in Windows Credential Manager, bind the target identity:
+   ```powershell
+   git config --global credential.https://github.com.username ixpeze
+   ```
