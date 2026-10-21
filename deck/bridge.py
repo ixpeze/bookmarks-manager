@@ -92,6 +92,114 @@ kernel32.GlobalLock.restype = wintypes.LPVOID
 kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
 kernel32.GlobalUnlock.restype = wintypes.BOOL
 
+# ==============================================================================
+# Windows Error Mode & Graceful Shutdown Interception
+# ==============================================================================
+SEM_FAILCRITICALERRORS = 0x0001
+SEM_NOGPFAULTERRORBOX = 0x0002
+SEM_NOOPENFILEERRORBOX = 0x8000
+try:
+    kernel32.SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX)
+except Exception:
+    pass
+
+IS_SHUTTING_DOWN = False
+
+def mark_shutdown():
+    """Trigger graceful shutdown and signal all worker threads to abort immediately."""
+    global IS_SHUTTING_DOWN
+    if IS_SHUTTING_DOWN:
+        return
+    IS_SHUTTING_DOWN = True
+    if "TELEMETRY" in globals() and TELEMETRY:
+        try:
+            TELEMETRY.stop()
+        except Exception:
+            pass
+    if "CLIPBOARD" in globals() and CLIPBOARD:
+        try:
+            CLIPBOARD.stop()
+        except Exception:
+            pass
+    if "BACKUP_DAEMON" in globals() and BACKUP_DAEMON:
+        try:
+            BACKUP_DAEMON.stop()
+        except Exception:
+            pass
+
+def _global_console_ctrl_handler(ctrl_type):
+    # 0: CTRL_C, 1: CTRL_BREAK, 2: CTRL_CLOSE, 5: CTRL_LOGOFF, 6: CTRL_SHUTDOWN
+    if ctrl_type in (2, 5, 6):
+        mark_shutdown()
+        return True
+    return False
+
+try:
+    HANDLER_TYPE = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_ulong)
+    _ctrl_handler_ref = HANDLER_TYPE(_global_console_ctrl_handler)
+    kernel32.SetConsoleCtrlHandler(_ctrl_handler_ref, True)
+except Exception:
+    pass
+
+import atexit
+atexit.register(mark_shutdown)
+
+# ==============================================================================
+# Native Win32 ICMP Echo Definitions (iphlpapi.dll - ZERO ping.exe subprocesses)
+# ==============================================================================
+class IP_OPTION_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ('Ttl', ctypes.c_ubyte),
+        ('Tos', ctypes.c_ubyte),
+        ('Flags', ctypes.c_ubyte),
+        ('OptionsSize', ctypes.c_ubyte),
+        ('OptionsData', ctypes.c_void_p),
+    ]
+
+class ICMP_ECHO_REPLY(ctypes.Structure):
+    _fields_ = [
+        ('Address', ctypes.c_ulong),
+        ('Status', ctypes.c_ulong),
+        ('RoundTripTime', ctypes.c_ulong),
+        ('DataSize', ctypes.c_ushort),
+        ('Reserved', ctypes.c_ushort),
+        ('Data', ctypes.c_void_p),
+        ('Options', IP_OPTION_INFORMATION),
+    ]
+
+try:
+    iphlp = ctypes.windll.iphlpapi
+    iphlp.IcmpCreateFile.restype = ctypes.c_void_p
+    iphlp.IcmpCreateFile.argtypes = []
+    iphlp.IcmpCloseHandle.restype = ctypes.c_bool
+    iphlp.IcmpCloseHandle.argtypes = [ctypes.c_void_p]
+    iphlp.IcmpSendEcho.restype = ctypes.c_ulong
+    iphlp.IcmpSendEcho.argtypes = [
+        ctypes.c_void_p, ctypes.c_ulong, ctypes.c_char_p, ctypes.c_ushort,
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong
+    ]
+    IPHLPAPI_AVAILABLE = True
+except Exception:
+    iphlp = None
+    IPHLPAPI_AVAILABLE = False
+
+# ==============================================================================
+# Native NVIDIA NVML GPU Definitions (nvml.dll - ZERO nvidia-smi.exe subprocesses)
+# ==============================================================================
+class NVML_MEMORY(ctypes.Structure):
+    _fields_ = [
+        ('total', ctypes.c_ulonglong),
+        ('free', ctypes.c_ulonglong),
+        ('used', ctypes.c_ulonglong)
+    ]
+
+class NVML_UTILIZATION(ctypes.Structure):
+    _fields_ = [
+        ('gpu', ctypes.c_uint),
+        ('memory', ctypes.c_uint)
+    ]
+
+
 
 # ==============================================================================
 # Everything 1.5 C-Types Integration
@@ -272,22 +380,31 @@ class SystemTelemetry:
         self._last_cpu_pct = 0.0
         self._init_cpu_sample()
 
-        # Hardware Static Specs (Queried once at startup)
+        # Hardware Static Specs (Queried once at startup via Win32 ctypes - ZERO subprocesses)
         self.cpu_name = self._get_cpu_name()
         self.cpu_cores = os.cpu_count() or 6
-        self.ram_sticks_summary = "64GB DDR4"
-        self._thread_ram = threading.Thread(target=self._query_ram_sticks_bg, daemon=True)
-        self._thread_ram.start()
+        self.ram_sticks_summary = "32GB DDR4"
+        self._query_ram_sticks()
+
+        # Native Direct NVIDIA NVML Hardware Interface (Zero nvidia-smi.exe subprocesses)
+        self._nvml = None
+        self._nvml_handle = None
+        self._nvml_initialized = False
+        self._gpu_name = "NVIDIA GeForce GPU"
+        self._init_nvml()
+
+        # Dynamic Gateway Detection (Zero shell commands)
+        self._gateway_ip = self._get_gateway_ip()
 
         # Cached Telemetry (Refreshed in background every 2s)
         self._cached_gpu = None
         self._cached_ping = 15
         self._cached_network = {
             "ping_ms": 15,
-            "edge_ping_ms": 3,
-            "int_ping_ms": 30,
-            "bdix_ping_ms": 5,
-            "gateway_ping_ms": 1,
+            "edge_ping_ms": 1,
+            "int_ping_ms": 35,
+            "bdix_ping_ms": 1,
+            "gateway_ping_ms": 0,
             "route_status": "optimal",
             "route_label": "BDIX & Global Normal"
         }
@@ -297,6 +414,16 @@ class SystemTelemetry:
         self._bg_thread = threading.Thread(target=self._telemetry_poller, daemon=True)
         self._bg_thread.start()
 
+    def stop(self):
+        """Immediately stop background polling and safely unload NVML before shutdown."""
+        self._running = False
+        if self._nvml_initialized and self._nvml:
+            try:
+                self._nvml.nvmlShutdown()
+            except Exception:
+                pass
+            self._nvml_initialized = False
+
     def _get_cpu_name(self):
         try:
             key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
@@ -305,97 +432,157 @@ class SystemTelemetry:
         except Exception:
             return "Intel Core Processor"
 
-    def _query_ram_sticks_bg(self):
+    def _query_ram_sticks(self):
         try:
-            ps_cmd = 'Get-CimInstance Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum | Select-Object -ExpandProperty Count'
-            res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True, text=True, timeout=5, creationflags=0x08000000)
-            count = res.stdout.strip()
-            if count and count.isdigit():
-                self.ram_sticks_summary = f"{count}x 32GB Sticks (64GB DDR4 @ 2666MHz)"
+            mem_kb = ctypes.c_ulonglong(0)
+            if kernel32.GetPhysicallyInstalledSystemMemory(ctypes.byref(mem_kb)):
+                total_gb = round(mem_kb.value / (1024 * 1024))
+                self.ram_sticks_summary = f"{total_gb}GB DDR4"
             else:
-                self.ram_sticks_summary = "2x 32GB Sticks (64GB DDR4 @ 2666MHz)"
+                self.ram_sticks_summary = "32GB DDR4"
         except Exception:
-            self.ram_sticks_summary = "2x 32GB Sticks (64GB DDR4 @ 2666MHz)"
+            self.ram_sticks_summary = "32GB DDR4"
+
+    def _get_gateway_ip(self):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("1.1.1.1", 80))
+                local_ip = s.getsockname()[0]
+            parts = local_ip.split(".")
+            if len(parts) == 4:
+                return f"{parts[0]}.{parts[1]}.{parts[2]}.1"
+        except Exception:
+            pass
+        return "192.168.11.1"
+
+    def _init_nvml(self):
+        try:
+            self._nvml = ctypes.CDLL("nvml.dll")
+            if self._nvml.nvmlInit_v2() == 0:
+                count = ctypes.c_uint()
+                self._nvml.nvmlDeviceGetCount_v2(ctypes.byref(count))
+                if count.value > 0:
+                    handle = ctypes.c_void_p()
+                    self._nvml.nvmlDeviceGetHandleByIndex_v2(0, ctypes.byref(handle))
+                    self._nvml_handle = handle
+                    name_buf = ctypes.create_string_buffer(64)
+                    self._nvml.nvmlDeviceGetName(handle, name_buf, 64)
+                    self._gpu_name = name_buf.value.decode("utf-8", errors="ignore")
+                    self._nvml_initialized = True
+        except Exception:
+            self._nvml_initialized = False
 
     def _telemetry_poller(self):
-        while self._running:
+        while self._running and not IS_SHUTTING_DOWN:
             try:
-                # 1. GPU stats via nvidia-smi
+                if IS_SHUTTING_DOWN:
+                    break
+                # 1. GPU stats via native in-memory NVML (0 subprocesses)
                 self._cached_gpu = self._query_gpu()
-                # 2. Dual-route network telemetry (Gateway, BDIX, Edge, Transit)
+                if IS_SHUTTING_DOWN:
+                    break
+                # 2. Dual-route network telemetry via native Win32 ICMP (0 subprocesses)
                 self._cached_network = self._measure_network()
                 self._cached_ping = self._cached_network.get("edge_ping_ms") or self._cached_network.get("int_ping_ms") or 15
-                # 3. All Drives
+                if IS_SHUTTING_DOWN:
+                    break
+                # 3. All Drives via Win32 ctypes
                 self._cached_drives = self.get_disk_stats()
-                # 4. RAM
+                # 4. RAM via Win32 ctypes
                 self._cached_ram = self.get_ram_stats()
             except Exception:
                 pass
-            time.sleep(2.0)
+            
+            # Sliced 2.0s sleep in 100ms intervals so thread terminates instantly on shutdown
+            for _ in range(20):
+                if not self._running or IS_SHUTTING_DOWN:
+                    break
+                time.sleep(0.1)
 
     def _query_gpu(self):
-        try:
-            res = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,memory.free,utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=2, creationflags=0x08000000
-            )
-            if res.returncode == 0 and res.stdout.strip():
-                parts = [p.strip() for p in res.stdout.strip().split(",")]
-                if len(parts) >= 6:
-                    name, total, used, free, util, temp = parts[:6]
-                    t_val = int(total) if total.isdigit() else 1
-                    u_val = int(used) if used.isdigit() else 0
-                    f_val = int(free) if free.isdigit() else 0
-                    vram_used_gb = round(u_val / 1024, 1)
-                    vram_total_gb = round(t_val / 1024, 1)
-                    vram_pct = round(u_val / t_val * 100, 1) if t_val > 0 else 0
-                    return {
-                        "name": name,
-                        "vram_total_mb": t_val,
-                        "vram_used_mb": u_val,
-                        "vram_free_mb": f_val,
-                        "vram_used_gb": vram_used_gb,
-                        "vram_total_gb": vram_total_gb,
-                        "vram_pct": vram_pct,
-                        "vram_used_pct": vram_pct,
-                        "load_pct": int(util) if util.isdigit() else 0,
-                        "temp_c": int(temp) if temp.isdigit() else 0
-                    }
-        except Exception:
-            pass
-        return None
+        if IS_SHUTTING_DOWN or not self._running:
+            return self._cached_gpu
+        if self._nvml_initialized and self._nvml_handle:
+            try:
+                mem = NVML_MEMORY()
+                self._nvml.nvmlDeviceGetMemoryInfo(self._nvml_handle, ctypes.byref(mem))
+                util = NVML_UTILIZATION()
+                self._nvml.nvmlDeviceGetUtilizationRates(self._nvml_handle, ctypes.byref(util))
+                temp = ctypes.c_uint()
+                self._nvml.nvmlDeviceGetTemperature(self._nvml_handle, 0, ctypes.byref(temp))
+                
+                t_val = int(mem.total // (1024 * 1024))
+                u_val = int(mem.used // (1024 * 1024))
+                f_val = int(mem.free // (1024 * 1024))
+                vram_used_gb = round(u_val / 1024, 1)
+                vram_total_gb = round(t_val / 1024, 1)
+                vram_pct = round(u_val / t_val * 100, 1) if t_val > 0 else 0
+                return {
+                    "name": self._gpu_name,
+                    "vram_total_mb": t_val,
+                    "vram_used_mb": u_val,
+                    "vram_free_mb": f_val,
+                    "vram_used_gb": vram_used_gb,
+                    "vram_total_gb": vram_total_gb,
+                    "vram_pct": vram_pct,
+                    "vram_used_pct": vram_pct,
+                    "load_pct": int(util.gpu),
+                    "temp_c": int(temp.value)
+                }
+            except Exception:
+                pass
+        return self._cached_gpu
 
     def _icmp_ping(self, host, timeout_ms=500):
-        try:
-            out = subprocess.run(
-                ['ping', '-n', '1', '-w', str(timeout_ms), host],
-                capture_output=True, text=True, timeout=1.2,
-                creationflags=0x08000000
-            )
-            m = re.search(r'time[=<](\d+)ms', out.stdout, re.IGNORECASE)
-            return int(m.group(1)) if m else None
-        except Exception:
+        if IS_SHUTTING_DOWN or not self._running:
             return None
+        if IPHLPAPI_AVAILABLE and iphlp is not None:
+            try:
+                ip = socket.gethostbyname(host)
+                addr = int.from_bytes(socket.inet_aton(ip), "little")
+                handle = iphlp.IcmpCreateFile()
+                if not handle or handle == -1:
+                    return None
+                try:
+                    send_data = b"deck_ping"
+                    reply_size = ctypes.sizeof(ICMP_ECHO_REPLY) + len(send_data) + 64
+                    reply_buf = ctypes.create_string_buffer(reply_size)
+                    ret = iphlp.IcmpSendEcho(
+                        handle, ctypes.c_ulong(addr), send_data, len(send_data),
+                        None, reply_buf, reply_size, timeout_ms
+                    )
+                    if ret > 0:
+                        reply = ICMP_ECHO_REPLY.from_buffer_copy(reply_buf[:ctypes.sizeof(ICMP_ECHO_REPLY)])
+                        if reply.Status == 0:
+                            return int(reply.RoundTripTime)
+                finally:
+                    iphlp.IcmpCloseHandle(handle)
+            except Exception:
+                pass
+        return None
 
     def _measure_ping(self):
+        if IS_SHUTTING_DOWN or not self._running:
+            return None
         t0 = time.perf_counter()
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(1.0)
-            s.connect(("1.1.1.1", 53))
-            s.close()
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.6)
+                s.connect(("1.1.1.1", 53))
             return round((time.perf_counter() - t0) * 1000)
         except Exception:
             return None
 
     def _measure_network(self):
-        gw = self._icmp_ping("192.168.50.1")
+        if IS_SHUTTING_DOWN or not self._running:
+            return self._cached_network
+        gw = self._icmp_ping(self._gateway_ip)
         bdix = self._icmp_ping("mimebd.com") or self._icmp_ping("bdix.net")
         edge = self._icmp_ping("1.1.1.1")
         intl = self._icmp_ping("8.8.8.8")
 
         # Fallback to TCP if ICMP blocked
-        if edge is None:
+        if edge is None and not IS_SHUTTING_DOWN:
             edge = self._measure_ping()
 
         # Classify route status
@@ -786,7 +973,11 @@ def open_directory_in_explorer(target_path):
 
 def send_windows_toast(title, message):
     """Send native Windows 10/11 desktop toast notification via PowerShell WinRT asynchronously."""
+    if IS_SHUTTING_DOWN:
+        return False
     def _worker():
+        if IS_SHUTTING_DOWN:
+            return
         try:
             safe_title = str(title).replace('"', '`"').replace("'", "''")
             safe_msg = str(message).replace('"', '`"').replace("'", "''")
@@ -807,7 +998,7 @@ $notification = [Windows.UI.Notifications.ToastNotification]::new($template)
                 creationflags=0x08000000
             )
         except Exception as e:
-            print(f"[Bridge] Toast error: {e}")
+            pass
 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
@@ -946,14 +1137,21 @@ class ClipboardManager:
             print(f"[Bridge] Set clipboard error: {e}")
             return False
 
+    def stop(self):
+        """Signal clipboard monitor thread to stop immediately."""
+        self._running = False
+
     def _monitor_loop(self):
         try:
             self._last_seq = user32.GetClipboardSequenceNumber()
         except Exception:
             pass
 
-        while self._running:
-            time.sleep(0.4)
+        while self._running and not IS_SHUTTING_DOWN:
+            for _ in range(4):
+                if not self._running or IS_SHUTTING_DOWN:
+                    return
+                time.sleep(0.1)
             try:
                 cur_seq = user32.GetClipboardSequenceNumber()
                 if cur_seq == self._last_seq:
@@ -1129,15 +1327,24 @@ class BackupDaemon:
         with self.lock:
             self._cached_state = state
 
+    def stop(self):
+        """Signal backup daemon thread to terminate immediately."""
+        self._running = False
+
     def _heartbeat_loop(self):
-        while self._running:
-            time.sleep(1800) # 30 min
+        while self._running and not IS_SHUTTING_DOWN:
+            for _ in range(1800):
+                if not self._running or IS_SHUTTING_DOWN:
+                    return
+                time.sleep(1)
             try:
+                if IS_SHUTTING_DOWN or not self._running:
+                    return
                 with self.lock:
                     if self._cached_state:
                         self.create_snapshot(self._cached_state, trigger="heartbeat")
             except Exception as e:
-                print(f"[Bridge] Heartbeat backup error: {e}")
+                pass
 
     def create_snapshot(self, state_dict, trigger="manual"):
         with self.lock:

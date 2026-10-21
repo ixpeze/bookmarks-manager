@@ -30,7 +30,7 @@ if defined OCCUPIED_PID (
         echo       PID !OCCUPIED_PID! is running in headless Session 0 [isolated from screen].
         echo       Terminating headless PID !OCCUPIED_PID!...
         taskkill /F /PID !OCCUPIED_PID! >nul 2>&1
-        ping -n 2 127.0.0.1 >nul
+        timeout /t 1 /nobreak >nul 2>&1
     ) else (
         echo       Testing bridge health...
         curl.exe -s --connect-timeout 1 http://127.0.0.1:8080/api/status >nul 2>&1
@@ -42,13 +42,13 @@ if defined OCCUPIED_PID (
             echo ========================================================
             echo    Deck is already running. You can close this window.
             echo ========================================================
-            ping -n 3 127.0.0.1 >nul
+            timeout /t 2 /nobreak >nul 2>&1
             exit /b 0
         ) else (
             echo       Process !OCCUPIED_PID! is unresponsive.
             echo       Terminating stale PID !OCCUPIED_PID!...
             taskkill /F /PID !OCCUPIED_PID! >nul 2>&1
-            ping -n 2 127.0.0.1 >nul
+            timeout /t 1 /nobreak >nul 2>&1
         )
     )
 ) else (
@@ -143,7 +143,7 @@ for /l %%i in (1,1,10) do (
         if !errorlevel! equ 0 (
             set BRIDGE_READY=1
         ) else (
-            ping -n 1 -w 400 127.0.0.1 >nul
+            timeout /t 1 /nobreak >nul 2>&1
         )
     )
 )
@@ -152,7 +152,7 @@ if !BRIDGE_READY! equ 0 (
     echo       [NOTE] Primary tray bridge did not bind in time.
     echo       Launching direct zero-dependency fallback bridge...
     start "" "!PYTHONW_BIN!" -B "%~dp0deck\bridge.py" 8080
-    ping -n 2 127.0.0.1 >nul
+    timeout /t 1 /nobreak >nul 2>&1
 )
 
 start "" "http://localhost:8080/"
@@ -161,5 +161,5 @@ echo  ⚡ Deck is running and connected!
 echo     Workstation status, telemetry, and drives are ONLINE.
 echo     Dashboard opened in your default browser.
 echo ========================================================
-ping -n 3 127.0.0.1 >nul
+timeout /t 2 /nobreak >nul 2>&1
 exit /b 0

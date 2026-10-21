@@ -77,6 +77,39 @@ if SCRIPT_DIR not in sys.path:
 
 import bridge
 
+# Disable Windows crash/initialization popups during shutdown
+SEM_FAILCRITICALERRORS = 0x0001
+SEM_NOGPFAULTERRORBOX = 0x0002
+SEM_NOOPENFILEERRORBOX = 0x8000
+try:
+    import ctypes
+    ctypes.windll.kernel32.SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX)
+except Exception:
+    pass
+
+DAEMON_INSTANCE = None
+
+def _tray_console_ctrl_handler(ctrl_type):
+    # 0: CTRL_C, 1: CTRL_BREAK, 2: CTRL_CLOSE, 5: CTRL_LOGOFF, 6: CTRL_SHUTDOWN
+    if ctrl_type in (2, 5, 6):
+        bridge.mark_shutdown()
+        global DAEMON_INSTANCE
+        if DAEMON_INSTANCE:
+            try:
+                DAEMON_INSTANCE.stop()
+            except Exception:
+                pass
+        os._exit(0)
+    return False
+
+try:
+    import ctypes
+    HANDLER_TYPE = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_ulong)
+    _tray_ctrl_ref = HANDLER_TYPE(_tray_console_ctrl_handler)
+    ctypes.windll.kernel32.SetConsoleCtrlHandler(_tray_ctrl_ref, True)
+except Exception:
+    pass
+
 # Registry autostart key
 REG_RUN_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 REG_RUN_KEY_NAME = "DeckDesktopBridge"
@@ -175,10 +208,14 @@ class DeckTrayDaemon:
 
     def start_http_server(self):
         ThreadingHTTPServer.allow_reuse_address = True
-        try:
-            self.server = ThreadingHTTPServer(("127.0.0.1", self.port), bridge.DeckBridgeHandler)
-        except OSError as e:
-            print(f"[Tray] Error binding port {self.port}: {e}")
+        for _ in range(6):
+            try:
+                self.server = ThreadingHTTPServer(("127.0.0.1", self.port), bridge.DeckBridgeHandler)
+                break
+            except OSError:
+                time.sleep(0.5)
+
+        if not self.server:
             return False
 
         self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -228,6 +265,7 @@ class DeckTrayDaemon:
         sys.exit(0)
 
     def stop(self, icon=None, item=None):
+        bridge.mark_shutdown()
         self.running = False
         if self.server:
             try:
@@ -275,6 +313,29 @@ class DeckTrayDaemon:
                     menu=menu
                 )
 
+                # Intercept Windows Session Ending Messages in Pystray Window:
+                # WM_QUERYENDSESSION (0x0011) and WM_ENDSESSION (0x0016)
+                # By default pystray returns 0, which tells Windows "App refuses to shut down!"
+                # We return 1 so Windows shuts down cleanly without delay or Application Errors.
+                WM_QUERYENDSESSION = 0x0011
+                WM_ENDSESSION = 0x0016
+
+                def _on_queryendsession(w, l):
+                    bridge.mark_shutdown()
+                    return 1  # 1 = TRUE: approve shutdown immediately!
+
+                def _on_endsession(w, l):
+                    bridge.mark_shutdown()
+                    try:
+                        self.stop()
+                    except Exception:
+                        pass
+                    os._exit(0)
+
+                if hasattr(self.icon, "_message_handlers") and isinstance(self.icon._message_handlers, dict):
+                    self.icon._message_handlers[WM_QUERYENDSESSION] = _on_queryendsession
+                    self.icon._message_handlers[WM_ENDSESSION] = _on_endsession
+
                 bridge.send_windows_toast(
                     "Deck Desktop Bridge",
                     f"Bridge is online in system tray on port {self.port}. Double-click icon to open."
@@ -293,7 +354,7 @@ class DeckTrayDaemon:
         )
         print(f"[Tray] Deck Bridge running silently in headless background mode on port {self.port}.")
         try:
-            while self.running:
+            while self.running and not bridge.IS_SHUTTING_DOWN:
                 time.sleep(1)
         except (KeyboardInterrupt, SystemExit):
             self.stop()
@@ -303,5 +364,14 @@ if __name__ == "__main__":
     port = DEFAULT_PORT
     if len(sys.argv) > 1 and sys.argv[1].isdigit():
         port = int(sys.argv[1])
-    daemon = DeckTrayDaemon(port=port)
-    daemon.run()
+    try:
+        daemon = DeckTrayDaemon(port=port)
+        DAEMON_INSTANCE = daemon
+        daemon.run()
+    except Exception as e:
+        import traceback
+        log_file = os.path.join(tempfile.gettempdir(), "deck_tray_err.log")
+        with open(log_file, "w", encoding="utf-8") as f:
+            f.write(f"FATAL EXCEPTION: {e}\n")
+            traceback.print_exc(file=f)
+        raise

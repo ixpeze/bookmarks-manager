@@ -7,7 +7,7 @@
       "color": "#0E1128",
       "border": "#2c5282",
       "icon": "box",
-      "path": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
+      "path": "C:\\Program Files\\Epic Games\\UE_5.7\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
       "args": [],
       "exists": true
     },
