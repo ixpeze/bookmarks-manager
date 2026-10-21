@@ -91,6 +91,15 @@ echo            in the Windows notification area on login.
 echo ========================================================
 echo.
 
+if /i "%~1"=="--silent" (
+    start "" "%PYTHONW_BIN%" -B "%TRAY_PY%"
+    exit /b 0
+)
+if /i "%~1"=="-s" (
+    start "" "%PYTHONW_BIN%" -B "%TRAY_PY%"
+    exit /b 0
+)
+
 :: 3. Offer to launch immediately
 set /p LAUNCH_NOW="Launch Deck System Tray Bridge now? [Y/N, default Y]: "
 if /i "%LAUNCH_NOW%"=="" set LAUNCH_NOW=Y

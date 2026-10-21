@@ -24,6 +24,13 @@
 
 ## Getting Started
 
+### 1. Multi-PC Setup from Network Share (Recommended)
+When using Deck across multiple PCs from a central network share (\\192.168.11.11\FastShare\...):
+1. Navigate to the FastShare folder on that PC.
+2. Double-click [setup_pc.bat](file:///setup_pc.bat).
+3. In the Chrome extensions window that opens, toggle **Developer mode**, click **Load unpacked**, press Ctrl+V in the folder bar (path is auto-copied to your clipboard), and hit Enter.
+4. Press Ctrl+T—Deck is instantly active on that PC with 0ms SSD speed, local telemetry, and offline support.
+
 ### 1. Chrome Extension (Recommended for 0ms New Tab)
 1. Open Chrome and navigate to `chrome://extensions`.
 2. Enable **Developer mode** (top-right toggle).
@@ -66,7 +73,8 @@ deck/
         ├── studio-3d.js
         ├── library-explorer.js
         └── utilities.js
-```
+```
+
 
 ---
 
